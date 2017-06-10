@@ -3,119 +3,29 @@
 
 #include "delaymsr.h"
 
-char txBuf[GPTP_SYNCMSG_ETH_FRAME_SIZE];
-char rxBuf[GPTP_SYNCMSG_ETH_FRAME_SIZE];
-char seq = 0;
-
-void initDM(struct dmst* dm)
+void initDM(struct gPTPd* gPTPd)
 {
-	int tsOpts;
-	int errCode;
-	struct ifreq ifreq;
-	struct hwtstamp_config cfg;
-
-	memset(&ifreq, 0, sizeof(ifreq));
-	memset(&cfg, 0, sizeof(cfg));
-	memset(dm, 0, sizeof(struct dmst));
-	dm->state = DM_STATE_INIT;
-	
-	/* Create a socket */
-	if (sock_create(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL), &dm->sock) < 0) {
-		printk(KERN_WARNING "gPTP sendSyncMsg Socket creation fails \n");
-		goto err;
-	}
-
-	/* Enable HW TS */
-	strncpy(ifreq.ifr_name, "eth0", sizeof(ifreq.ifr_name) - 1);
-	ifreq.ifr_data = (void *) &cfg;
-	cfg.tx_type    = HWTSTAMP_TX_ON;
-	cfg.rx_filter  = HWTSTAMP_FILTER_PTP_V2_L2_EVENT;
-	if ((errCode == dm->sock->ops->ioctl(dm->sock, SIOCSHWTSTAMP, &ifreq)) != 0) {
-		printk(KERN_WARNING "gPTP sendSyncMsg Set HW TS option fails %d\n", errCode);
-		goto err;	
-	}
-
-	/* Set timestamp options */
-	tsOpts = SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_RAW_HARDWARE | \
-		 SOF_TIMESTAMPING_OPT_CMSG | SOF_TIMESTAMPING_OPT_ID;
-	if ((errCode == dm->sock->ops->setsockopt(dm->sock, SOL_SOCKET, SO_TIMESTAMPING, (void *) &tsOpts, sizeof(tsOpts))) != 0) {
-		printk(KERN_WARNING "gPTP sendSyncMsg Set TS option fails %d\n", errCode);
-		goto err;	
-	}
-
-	/* Set error queue options */
-	tsOpts = 1;
-	if ((errCode == dm->sock->ops->setsockopt(dm->sock, SOL_SOCKET, SO_SELECT_ERR_QUEUE, (void *) &tsOpts, sizeof(tsOpts))) != 0) {
-		printk(KERN_WARNING "gPTP sendSyncMsg Set ErrQ option fails %d\n", errCode);
-		goto err;	
-	}
-
-	/* Index of the network device */
-	dm->txSockAddress.sll_family = AF_PACKET;
-	dm->txSockAddress.sll_protocol = htons(ETH_P_1588);
-	dm->txSockAddress.sll_ifindex = 2;
-	/* Address length*/
-	dm->txSockAddress.sll_halen = ETH_ALEN;
-	/* Destination MAC */
-	dm->txSockAddress.sll_addr[0] = 0x01;
-	dm->txSockAddress.sll_addr[1] = 0x80;
-	dm->txSockAddress.sll_addr[2] = 0xC2;
-	dm->txSockAddress.sll_addr[3] = 0x00;
-	dm->txSockAddress.sll_addr[4] = 0x00;
-	dm->txSockAddress.sll_addr[5] = 0x0E;
-
-	/* Set the message header */
-	dm->txMsgHdr.msg_control=NULL;
-	dm->txMsgHdr.msg_controllen=0;
-	dm->txMsgHdr.msg_flags=0;
-	dm->txMsgHdr.msg_name=&dm->txSockAddress;
-	dm->txMsgHdr.msg_namelen=sizeof(struct sockaddr_ll);
-	dm->txMsgHdr.msg_iocb = NULL;
-
-	/* Index of the network device */
-	dm->rxSockAddress.sll_family = AF_PACKET;
-	dm->rxSockAddress.sll_protocol = htons(ETH_P_1588);
-	dm->rxSockAddress.sll_ifindex = 2;
-	/* Address length*/
-	dm->rxSockAddress.sll_halen = ETH_ALEN;
-	/* Destination MAC */
-	dm->rxSockAddress.sll_addr[0] = 0x04;
-	dm->rxSockAddress.sll_addr[1] = 0xA3;
-	dm->rxSockAddress.sll_addr[2] = 0x16;
-	dm->rxSockAddress.sll_addr[3] = 0xAD;
-	dm->rxSockAddress.sll_addr[4] = 0x3A;
-	dm->rxSockAddress.sll_addr[5] = 0x33;
-
-	/* Set the message header */
-	dm->rxMsgHdr.msg_control=dm->tsBuf;
-	dm->rxMsgHdr.msg_controllen=GPTP_SYNCMSG_ETH_FRAME_SIZE;
-	dm->rxMsgHdr.msg_flags=0;
-	dm->rxMsgHdr.msg_name=&dm->rxSockAddress;
-	dm->rxMsgHdr.msg_namelen=sizeof(struct sockaddr_ll);
-	dm->rxMsgHdr.msg_iocb = NULL;
-
-err:
-	return;
+	gPTPd->dm.state = DM_STATE_INIT;
 }
 
-void unintDM(struct dmst* dm)
+void unintDM(struct gPTPd* gPTPd)
 {
-	sock_release(dm->sock);
+	
 }
 
-void dmHandleEvent(struct dmst* dm, int evtId)
+void dmHandleEvent(struct gPTPd* gPTPd, int evtId)
 {
-	printk(KERN_INFO "gPTP dmHandleEvent st: %d evt: %d \n", dm->state, evtId);
+	gPTP_logMsg(GPTP_LOG_DEBUG, "gPTP dmHandleEvent st: %d evt: %d \n", gPTPd->dm.state, evtId);
 	
-	switch(dm->state) {
+	switch(gPTPd->dm.state) {
 
 		case DM_STATE_INIT:
 		case DM_STATE_IDLE:
 	
 			switch (evtId) {
 				case GPTP_EVT_ONE_SEC_TICK:
-					sendDelayReq(dm);
-					dmHandleStateChange(dm, DM_STATE_DELAY_REQ_TX);
+					sendDelayReq(gPTPd);
+					dmHandleStateChange(gPTPd, DM_STATE_DELAY_REQ_TX);
 					break;
 				default:
 					break;
@@ -127,7 +37,7 @@ void dmHandleEvent(struct dmst* dm, int evtId)
 	
 			switch (evtId) {
 				case GPTP_EVT_ONE_SEC_TICK:
-					getDelayReqTS(dm);
+					getDelayReqTS(gPTPd);
 					break;
 				default:
 					break;
@@ -137,22 +47,18 @@ void dmHandleEvent(struct dmst* dm, int evtId)
 	}
 }
 
-void dmHandleStateChange(struct dmst* dm, int toState)
+void dmHandleStateChange(struct gPTPd* gPTPd, int toState)
 {
-	dm->state = toState;
+	gPTPd->dm.state = toState;
 }
 
-static int sendDelayReq(struct dmst* dm)
+static void sendDelayReq(struct gPTPd* gPTPd)
 {
-	int res = -1;
-	int dataOff;
-	int errCode;
-	struct ethhdr *eh = (struct ethhdr *)txBuf;
-	struct iovec txiov;
-	mm_segment_t oldfs;
+	int txLen = 0;
+	struct ethhdr *eh = (struct ethhdr *)gPTPd->txBuf;
 
 	/* Initialize it */
-	memset(txBuf, 0, GPTP_SYNCMSG_ETH_FRAME_SIZE);
+	memset(gPTPd->txBuf, 0, GPTP_TX_BUF_SIZE);
 
 	/* Fill in the Ethernet header */
 	eh->h_dest[0] = 0x01;
@@ -172,123 +78,90 @@ static int sendDelayReq(struct dmst* dm)
 	eh->h_proto = htons(ETH_P_1588);
 
 	/* Get data offset */
-	dataOff = sizeof(struct ethhdr);
+	txLen = sizeof(struct ethhdr);
 
 	/* Fill PTP payload data */
-	txBuf[dataOff++] = 0x02;
-	txBuf[dataOff++] = 0x02;
+	gPTPd->txBuf[txLen++] = 0x02;
+	gPTPd->txBuf[txLen++] = 0x02;
 
-	txBuf[dataOff++] = 0x00;
-	txBuf[dataOff++] = 0x36;
+	gPTPd->txBuf[txLen++] = 0x00;
+	gPTPd->txBuf[txLen++] = 0x36;
 
-	txBuf[dataOff++] = 0x00;
-	txBuf[dataOff++] = 0x00;
+	gPTPd->txBuf[txLen++] = 0x00;
+	gPTPd->txBuf[txLen++] = 0x00;
 
-	txBuf[dataOff++] = 0x00;
-	txBuf[dataOff++] = 0x00;
+	gPTPd->txBuf[txLen++] = 0x00;
+	gPTPd->txBuf[txLen++] = 0x00;
 
-	txBuf[dataOff++] = 0x00; txBuf[dataOff++] = 0x00; txBuf[dataOff++] = 0x00;
-	txBuf[dataOff++] = 0x00; txBuf[dataOff++] = 0x00; txBuf[dataOff++] = 0x00;
-	txBuf[dataOff++] = 0x00; txBuf[dataOff++] = 0x00;
+	gPTPd->txBuf[txLen++] = 0x00; gPTPd->txBuf[txLen++] = 0x00; gPTPd->txBuf[txLen++] = 0x00;
+	gPTPd->txBuf[txLen++] = 0x00; gPTPd->txBuf[txLen++] = 0x00; gPTPd->txBuf[txLen++] = 0x00;
+	gPTPd->txBuf[txLen++] = 0x00; gPTPd->txBuf[txLen++] = 0x00;
 
-	txBuf[dataOff++] = 0x00; txBuf[dataOff++] = 0x00; txBuf[dataOff++] = 0x00;
-	txBuf[dataOff++] = 0x00; 
+	gPTPd->txBuf[txLen++] = 0x00; gPTPd->txBuf[txLen++] = 0x00; gPTPd->txBuf[txLen++] = 0x00;
+	gPTPd->txBuf[txLen++] = 0x00; 
 
-	txBuf[dataOff++] = 0x04; txBuf[dataOff++] = 0xA3; txBuf[dataOff++] = 0x16;
-	txBuf[dataOff++] = 0xFF; txBuf[dataOff++] = 0xFE; txBuf[dataOff++] = 0xAD;
-	txBuf[dataOff++] = 0x3A; txBuf[dataOff++] = 0x33; txBuf[dataOff++] = 0x00;
-	txBuf[dataOff++] = 0x01;
+	gPTPd->txBuf[txLen++] = 0x04; gPTPd->txBuf[txLen++] = 0xA3; gPTPd->txBuf[txLen++] = 0x16;
+	gPTPd->txBuf[txLen++] = 0xFF; gPTPd->txBuf[txLen++] = 0xFE; gPTPd->txBuf[txLen++] = 0xAD;
+	gPTPd->txBuf[txLen++] = 0x3A; gPTPd->txBuf[txLen++] = 0x33; gPTPd->txBuf[txLen++] = 0x00;
+	gPTPd->txBuf[txLen++] = 0x01;
 
-	seq++;
-	txBuf[dataOff++] = 0x00; txBuf[dataOff++] = seq;
+	gPTPd->seq++;
+	gPTPd->txBuf[txLen++] = 0x00; gPTPd->txBuf[txLen++] = gPTPd->seq;
 
-	txBuf[dataOff++] = 0x05;
-	txBuf[dataOff++] = 0x7f;
+	gPTPd->txBuf[txLen++] = 0x05;
+	gPTPd->txBuf[txLen++] = 0x7f;
 
 	/* PTP body */
-	dataOff += 20;
+	txLen += 20;
 
-	/* Set the output buffer */
-	txiov.iov_base = txBuf;
-	txiov.iov_len = dataOff;
-	iov_iter_init(&dm->txMsgHdr.msg_iter, WRITE | ITER_KVEC, &txiov, 1, dataOff );
-
-	oldfs=get_fs();
-	set_fs(KERNEL_DS);
-
-	/* Send packet */
-	if ((errCode = sock_sendmsg(dm->sock, &dm->txMsgHdr)) <= 0) {
-		printk(KERN_WARNING "gPTP sendSyncMsg Socket transmission fails %d \n", errCode);
-		goto fserr;
-	} else {
-		res = 0;
-		printk(KERN_WARNING "gPTP sendSyncMsg Socket transmission success \n");
-	}
-	
-fserr:
-	set_fs(oldfs);
-
-	return res;		
+	if (sendto(gPTPd->sockfd, gPTPd->txBuf, txLen, 0, (struct sockaddr*)&gPTPd->txSockAddress, sizeof(struct sockaddr_ll)) < 0)
+	    gPTP_logMsg(GPTP_LOG_DEBUG, "Send failed\n");	
 }
 
-static int getDelayReqTS(struct dmst* dm)
+static void getDelayReqTS(struct gPTPd* gPTPd)
 {
-	int res = -1;
-	int errCode;
-	struct iovec rxiov;
-	struct cmsghdr *cmsghdr;
-	struct cmsghdr *pcmsghdr;
-	int cmsgcount = 0;
+	static short sk_events = POLLPRI;
+	static short sk_revents = POLLPRI;
+	int cnt = 0, res = 0, level, type;
+	struct cmsghdr *cm;
+	struct iovec iov = { gPTPd->rxBuf, GPTP_RX_BUF_SIZE };
+	struct timespec *sw, *ts = NULL;
+	struct pollfd pfd = { gPTPd->sockfd, sk_events, 0 };
 
-	/* Set the output buffer */
-	rxiov.iov_base = rxBuf;
-	rxiov.iov_len = GPTP_SYNCMSG_ETH_FRAME_SIZE;
-	iov_iter_init(&dm->rxMsgHdr.msg_iter, READ | ITER_KVEC, &rxiov, 1, GPTP_SYNCMSG_ETH_FRAME_SIZE);
+	gPTPd->rxMsgHdr.msg_iov = &iov;
+	gPTPd->rxMsgHdr.msg_iovlen = 1;
 
-	/* Destination MAC */
-	dm->rxSockAddress.sll_addr[0] = 0x01;
-	dm->rxSockAddress.sll_addr[1] = 0x80;
-	dm->rxSockAddress.sll_addr[2] = 0xC2;
-	dm->rxSockAddress.sll_addr[3] = 0x00;
-	dm->rxSockAddress.sll_addr[4] = 0x00;
-	dm->rxSockAddress.sll_addr[5] = 0x0E;	
-	
-	/* Receive packet */
-	/* rxcount = 0;
-	if (((errCode = sock_recvmsg(dm->sock, &dm->rxMsgHdr, GPTP_SYNCMSG_ETH_FRAME_SIZE, 0)) > 0) && (rxcount < 10)) {
-		res = 0;
-		rxcount++;
-		printk(KERN_WARNING "gPTP getDelayReqTS Socket reception success with msgsize %d cmsgsize %d \n", errCode, dm->rxMsgHdr.msg_controllen);
-		cmsgcount = 0;
-		cmsghdr = CMSG_FIRSTHDR(&dm->rxMsgHdr);
-		while ((cmsghdr) && (cmsgcount < 3)) {
-			printk(KERN_WARNING "gPTP getDelayReqTS Cmsg lvl:%d type:%d len:%d", cmsghdr->cmsg_level, cmsghdr->cmsg_type, cmsghdr->cmsg_len);
-			cmsgcount++;
-			pcmsghdr = cmsghdr;
-			cmsghdr = CMSG_NXTHDR(&dm->rxMsgHdr, pcmsghdr);	
-		}
+	res = poll(&pfd, 1, 1000);
+	if (res < 1) {
+		gPTP_logMsg(GPTP_LOG_DEBUG, "Poll failed %d\n", res);
+	} else if (!(pfd.revents & sk_revents)) {
+		gPTP_logMsg(GPTP_LOG_DEBUG, "poll for tx timestamp woke up on non ERR event");
 	} else {
-		printk(KERN_WARNING "gPTP getDelayReqTS Socket reception fails %d \n", errCode);
-	} */
-
-	msleep(1500);
-	
-	if ((errCode = sock_recvmsg(dm->sock, &dm->rxMsgHdr, GPTP_SYNCMSG_ETH_FRAME_SIZE, MSG_ERRQUEUE)) > 0) {
-		res = 0;
-		printk(KERN_WARNING "gPTP getDelayReqTS Err Socket reception success with msgsize %d cmsgsize %d \n", errCode, dm->rxMsgHdr.msg_controllen);
-		cmsghdr = CMSG_FIRSTHDR(&dm->rxMsgHdr);
-		cmsgcount = 0;
-		cmsghdr = CMSG_FIRSTHDR(&dm->rxMsgHdr);
-		while ((cmsghdr) && (cmsgcount < 3)) {
-			printk(KERN_WARNING "gPTP getDelayReqTS Err Cmsg lvl:%d type:%d len:%d", cmsghdr->cmsg_level, cmsghdr->cmsg_type, cmsghdr->cmsg_len);
-			cmsgcount++;
-			pcmsghdr = cmsghdr;
-			cmsghdr = CMSG_NXTHDR(&dm->rxMsgHdr, pcmsghdr);	
-		}
-	} else {
-		printk(KERN_WARNING "gPTP getDelayReqTS Err Socket reception fails %d \n", errCode);
-	}
-
-	return res;
+		gPTP_logMsg(GPTP_LOG_DEBUG, "Poll success\n");	
+		cnt = recvmsg(gPTPd->sockfd, &gPTPd->rxMsgHdr, MSG_ERRQUEUE);
+		if (cnt < 1)
+			gPTP_logMsg(GPTP_LOG_DEBUG, "Recv failed\n");
+		else
+			for (cm = CMSG_FIRSTHDR(&gPTPd->rxMsgHdr); cm != NULL; cm = CMSG_NXTHDR(&gPTPd->rxMsgHdr, cm)) {
+				level = cm->cmsg_level;
+				type  = cm->cmsg_type;
+				gPTP_logMsg(GPTP_LOG_DEBUG, "Lvl:%d Type: %d Size: %d (%d)\n", level, type, cm->cmsg_len, sizeof(struct timespec));
+				if (SOL_SOCKET == level && SO_TIMESTAMPING == type) {
+					if (cm->cmsg_len < sizeof(*ts) * 3) {
+						printf("short SO_TIMESTAMPING message");
+					} else {
+						ts = (struct timespec *) CMSG_DATA(cm);
+						gPTP_logMsg(GPTP_LOG_DEBUG, "sec: %d nsec: %d \n", ts[0].tv_sec, ts[0].tv_nsec);
+						gPTP_logMsg(GPTP_LOG_DEBUG, "sec: %d nsec: %d \n", ts[1].tv_sec, ts[1].tv_nsec);
+						gPTP_logMsg(GPTP_LOG_DEBUG, "sec: %d nsec: %d \n", ts[2].tv_sec, ts[2].tv_nsec);
+					}
+				}
+				if (SOL_SOCKET == level && SO_TIMESTAMPNS == type) {
+					if (cm->cmsg_len < sizeof(*sw)) {
+						gPTP_logMsg(GPTP_LOG_DEBUG, "short SO_TIMESTAMPNS message");
+					}
+				}
+			}
+	}	
 }
 
