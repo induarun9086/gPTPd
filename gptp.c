@@ -119,6 +119,8 @@ static void gptp_start(void)
 	if (ioctl(gPTPd.sockfd, SIOCGIFHWADDR, &if_mac) < 0)
 	    gPTP_logMsg(GPTP_LOG_DEBUG, "SIOCGIFHWADDR err:%d\n", errno);
 
+#ifndef GPTPD_BUILD_X_86
+
 	/* Set HW timestamp */
 	memset(&if_hw, 0, sizeof(struct ifreq));
 	memset(&hwcfg, 0, sizeof(struct hwtstamp_config));
@@ -131,8 +133,6 @@ static void gptp_start(void)
 	else
 	    gPTP_logMsg(GPTP_LOG_DEBUG, "HW tx:%d rxFilter: %d \n", hwcfg.tx_type, hwcfg.rx_filter);
 
-#ifndef GPTPD_BUILD_X_86
-
 	/* Set timestamp options */
 	tsOpts = SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_RAW_HARDWARE | \
 		 SOF_TIMESTAMPING_OPT_CMSG | SOF_TIMESTAMPING_OPT_ID;
@@ -142,7 +142,7 @@ static void gptp_start(void)
 #else
 
 	/* Set timestamp options */
-	tsOpts = SOF_TIMESTAMPING_RX_SOFTWARE | SOF_TIMESTAMPING_TX_SOFTWARE | SOF_TIMESTAMPING_SOFTWARE | \
+	tsOpts = SOF_TIMESTAMPING_RX_SOFTWARE | SOF_TIMESTAMPING_TX_SOFTWARE | SOF_TIMESTAMPING_TX_SCHED | SOF_TIMESTAMPING_SOFTWARE | \
 		 SOF_TIMESTAMPING_OPT_CMSG | SOF_TIMESTAMPING_OPT_ID;
 	if (setsockopt(gPTPd.sockfd, SOL_SOCKET, SO_TIMESTAMPING, &tsOpts, sizeof(tsOpts)) < 0)
 	    gPTP_logMsg(GPTP_LOG_DEBUG, "SO_TIMESTAMPING err:%d\n", errno);
