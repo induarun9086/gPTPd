@@ -20,8 +20,14 @@
 /* Ethernet payload sizes */
 #define GPTP_SYNCMSG_ETH_FRAME_SIZE       512
 
+#define FALSE 0
+#define TRUE  1
+
+typedef char bool;
+
 struct gPTPd {
-	int sockfd;
+	bool daemonMode;
+	int  sockfd;
 	char txBuf[GPTP_TX_BUF_SIZE];
 	char rxBuf[GPTP_RX_BUF_SIZE];
 };
