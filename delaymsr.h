@@ -3,10 +3,10 @@
 #ifndef DELAY_MSR_H
 #define DELAY_MSR_H
 
-#define DM_STATE_INIT            0
-#define DM_STATE_IDLE            1
-#define DM_STATE_DELAY_REQ_TX    2
-#define DM_STATE_DELAY_RES_RX    3
+#define DM_STATE_INIT			0
+#define DM_STATE_IDLE			1
+#define DM_STATE_DELAY_RESP_WAIT	2
+#define DM_STATE_DELAY_RESP_FLWUP_WAIT	3
 
 void initDM(struct gPTPd* gPTPd);
 void unintDM(struct gPTPd* gPTPd);
@@ -15,7 +15,10 @@ void dmHandleStateChange(struct gPTPd* gPTPd, int toState);
 
 #ifdef DELAY_MSR_MODULE
 static void sendDelayReq(struct gPTPd* gPTPd);
-static void getDelayReqTS(struct gPTPd* gPTPd);
+static void sendDelayResp(struct gPTPd* gPTPd);
+static void sendDelayRespFlwUp(struct gPTPd* gPTPd);
+static void getTxTS(struct gPTPd* gPTPd);
+static void getRxTS(struct gPTPd* gPTPd);
 #endif
 
 #endif
