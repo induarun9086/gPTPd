@@ -17,8 +17,8 @@ void dmHandleStateChange(struct gPTPd* gPTPd, int toState);
 static void sendDelayReq(struct gPTPd* gPTPd);
 static void sendDelayResp(struct gPTPd* gPTPd);
 static void sendDelayRespFlwUp(struct gPTPd* gPTPd);
-static void getTxTS(struct gPTPd* gPTPd);
-static void getRxTS(struct gPTPd* gPTPd);
+static void getTxTS(struct gPTPd* gPTPd, struct gPTPts* ts);
+static void getRxTS(struct gPTPd* gPTPd, struct gPTPts* ts);
 #endif
 
 #endif

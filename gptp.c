@@ -97,11 +97,13 @@ static void gptp_setup(void)
 		gPTP_openLog(GPTP_LOG_DEST_CONSOLE, gPTPd.logLevel);
 	}
 
+	gPTP_logMsg(GPTP_LOG_INFO, "\n-------------------------------------\n");
 #ifdef GPTPD_BUILD_X_86
 	gPTP_logMsg(GPTP_LOG_INFO, "gPTP Init x86 %s %s\n", __DATE__, __TIME__);
 #else
 	gPTP_logMsg(GPTP_LOG_INFO, "gPTP Init bbb %s %s\n", __DATE__, __TIME__);
 #endif
+	gPTP_logMsg(GPTP_LOG_INFO, "-------------------------------------\n\n");
 }
 
 static void gptp_start(void)
@@ -162,7 +164,7 @@ static void gptp_start(void)
 #endif
 
 	/* Set rx timeout options */
-	rxTimeout.tv_sec = 100;
+	rxTimeout.tv_sec = 1;
 	rxTimeout.tv_usec = 0;
 	if (setsockopt(gPTPd.sockfd, SOL_SOCKET, SO_RCVTIMEO, &rxTimeout, sizeof(rxTimeout)) < 0)
 	    gPTP_logMsg(GPTP_LOG_ERROR, "SO_RCVTIMEO err:%d\n", errno);
@@ -234,7 +236,7 @@ static void gptp_start(void)
 	gPTPd.rxMsgHdr.msg_namelen=sizeof(struct sockaddr_ll);
 
 	/* Start the other state machines */
-	//dmHandleEvent(&gPTPd, GPTP_EVT_DM_ENABLE);
+	dmHandleEvent(&gPTPd, GPTP_EVT_DM_ENABLE);
 	
 }
 
@@ -290,10 +292,18 @@ static int gptp_parseMsg(void)
 			case GPTP_MSG_TYPE_PDELAY_REQ:
 				evt = GPTP_EVT_DM_PDELAY_REQ;
 				break;
+			case GPTP_MSG_TYPE_PDELAY_RESP:
+				evt = GPTP_EVT_DM_PDELAY_RESP;
+				break;
+			case GPTP_MSG_TYPE_PDELAY_RESP_FLWUP:
+				evt = GPTP_EVT_DM_PDELAY_RESP_FLWUP;
+				break;
 			default:
 				break;
 		}
 	};
+
+	gPTP_logMsg(GPTP_LOG_DEBUG, "gPTP parseMsg %d 0x%x 0x%x\n", eh->h_proto, gh->h.f.b1.msgType, evt);
 
 	return evt;
 }
@@ -327,9 +337,17 @@ int main(int argc, char* argv[])
 
 		/* Wait for GPTP events/messages */
 		memset(gPTPd.rxBuf, 0, GPTP_RX_BUF_SIZE);
+		memset(gPTPd.tsBuf, 0, GPTP_CON_TS_BUF_SIZE);
+		gPTPd.rxMsgHdr.msg_iov = &gPTPd.rxiov;
+		gPTPd.rxMsgHdr.msg_iovlen = 1;
+		gPTPd.rxMsgHdr.msg_control=gPTPd.tsBuf;
+		gPTPd.rxMsgHdr.msg_controllen=GPTP_CON_TS_BUF_SIZE;
+		gPTPd.rxMsgHdr.msg_flags=0;
+		gPTPd.rxMsgHdr.msg_name=&gPTPd.rxSockAddress;
+		gPTPd.rxMsgHdr.msg_namelen=sizeof(struct sockaddr_ll);
 		cnt = recvmsg(gPTPd.sockfd, &gPTPd.rxMsgHdr, 0);
 	
-		gPTP_logMsg(GPTP_LOG_DEBUG, "gPTP recvmsg %d %d\n", cnt, errno);
+		gPTP_logMsg(GPTP_LOG_DEBUG, "\ngPTP recvmsg %d %d\n", cnt, errno);
 
 		if (cnt >= 1)
 			evt = gptp_parseMsg(); 

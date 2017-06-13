@@ -45,9 +45,14 @@
 #define GPTP_EVT_DM_PDELAY_RESP_FLWUP     (GPTP_EVT_DEST_DM | 0x3)
 
 /* GPTP types */
+#define GPTP_ETHEDR_HDR_LEN               14
 #define GPTP_HEADER_LEN                   34
 
 #define GPTP_MSG_TYPE_PDELAY_REQ          0x02
+#define GPTP_MSG_TYPE_PDELAY_RESP         0x03
+#define GPTP_MSG_TYPE_PDELAY_RESP_FLWUP   0x0A
+
+#define GPTP_BODY_OFFSET                  (GPTP_ETHEDR_HDR_LEN + GPTP_HEADER_LEN)
 
 #define FALSE 0
 #define TRUE  1
@@ -86,6 +91,14 @@ struct gPTPHdr {
 	} h;
 };
 
+struct gPTPts {
+	struct ts {
+		u32 msb;
+		u16 lsb;
+	} s;
+	u32 ns;
+};
+
 #pragma pack(pop)
 
 struct dmst {
@@ -97,6 +110,8 @@ struct gPTPd {
 	int  sockfd;
 	int  logLevel;
 	bool daemonMode;
+	
+	u32   msrdDelay; 
 
 	char txBuf[GPTP_TX_BUF_SIZE];
 	char rxBuf[GPTP_RX_BUF_SIZE];
@@ -109,6 +124,7 @@ struct gPTPd {
 	struct sockaddr_ll txSockAddress;
 	struct sockaddr_ll rxSockAddress;
 
+	struct gPTPts ts[4];
 	struct dmst dm;
 };
 
