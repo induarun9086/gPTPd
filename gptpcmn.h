@@ -17,6 +17,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <poll.h>
+#include <time.h>
 
 #ifndef GPTP_CMN_H
 #define GPTP_CMN_H
@@ -26,6 +27,12 @@
 #define GPTP_RX_BUF_SIZE                  4096
 #define GPTP_IF_NAME_SIZE                 IFNAMSIZ
 #define GPTP_CON_TS_BUF_SIZE              1024
+
+/* List of timers */
+#define GPTP_TIMER_DELAYREQ_RPT           0
+#define GPTP_TIMER_DELAYREQ_TO            1
+#define GPTP_NUM_TIMERS                   2
+#define GPTP_TIMER_INVALID                GPTP_NUM_TIMERS
 
 /* Event destinations */
 #define GPTP_EVT_DEST_MASK                0xffff0000
@@ -37,12 +44,15 @@
 
 /* list of events */
 #define GPTP_EVT_NONE                     (GPTP_EVT_DEST_ALL | 0x0)
-#define GPTP_EVT_ONE_SEC_TICK             (GPTP_EVT_DEST_ALL | 0x1)
+#define GPTP_EVT_STATE_ENTRY              (GPTP_EVT_DEST_ALL | 0x1)
+#define GPTP_EVT_STATE_EXIT               (GPTP_EVT_DEST_ALL | 0x2)
 
 #define GPTP_EVT_DM_ENABLE                (GPTP_EVT_DEST_DM | 0x0)
 #define GPTP_EVT_DM_PDELAY_REQ            (GPTP_EVT_DEST_DM | 0x1)
 #define GPTP_EVT_DM_PDELAY_RESP           (GPTP_EVT_DEST_DM | 0x2)
 #define GPTP_EVT_DM_PDELAY_RESP_FLWUP     (GPTP_EVT_DEST_DM | 0x3)
+#define GPTP_EVT_DM_PDELAY_REQ_RPT        (GPTP_EVT_DEST_DM | 0x4)
+#define GPTP_EVT_DM_PDELAY_REQ_TO         (GPTP_EVT_DEST_DM | 0x5)
 
 /* GPTP types */
 #define GPTP_ETHEDR_HDR_LEN               14
@@ -101,17 +111,27 @@ struct gPTPts {
 
 #pragma pack(pop)
 
+struct timer {
+	u64 lastTS;
+	u32 timeInterval;
+	u32 timerEvt;
+};
+
 struct dmst {
 	int state;
+	u16 rxSeqNo;
+	u16 txSeqNo;
+	u32 delayReqInterval;
+	u32 delayReqTimeOut;
+	bool initalDelayReqSent;
 };
 
 struct gPTPd {
-	int  seq;
 	int  sockfd;
 	int  logLevel;
 	bool daemonMode;
 	
-	u32   msrdDelay; 
+	u32   msrdDelay;
 
 	char txBuf[GPTP_TX_BUF_SIZE];
 	char rxBuf[GPTP_RX_BUF_SIZE];
@@ -124,9 +144,18 @@ struct gPTPd {
 	struct sockaddr_ll txSockAddress;
 	struct sockaddr_ll rxSockAddress;
 
-	struct gPTPts ts[4];
+	struct gPTPts ts[6];
+	struct timer timers[GPTP_NUM_TIMERS];
 	struct dmst dm;
 };
+
+
+void gptp_initTxBuf(struct gPTPd* gPTPd);
+void gptp_initRxBuf(struct gPTPd* gPTPd);
+
+u64 gptp_getCurrMilliSecTS(void);
+void gptp_startTimer(struct gPTPd* gPTPd, u32 timerId, u32 timeInterval, u32 timerEvt);
+void gptp_stopTimer(struct gPTPd* gPTPd, u32 timerId);
 
 #endif
 

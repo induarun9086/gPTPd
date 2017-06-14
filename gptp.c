@@ -6,8 +6,8 @@ struct gPTPd gPTPd;
 static void gptp_init(int argc, char* argv[]);
 static void gptp_setup(void);
 static void gptp_start(void);
-static void gptp_initTxBuf(void);
 static int gptp_parseMsg(void);
+static void gptp_handleEvent(int evt);
 static void gptp_exit(void);
 
 static void gptp_init(int argc, char* argv[])
@@ -97,13 +97,13 @@ static void gptp_setup(void)
 		gPTP_openLog(GPTP_LOG_DEST_CONSOLE, gPTPd.logLevel);
 	}
 
-	gPTP_logMsg(GPTP_LOG_INFO, "\n-------------------------------------\n");
+	gPTP_logMsg(GPTP_LOG_NOTICE, "-------------------------------------\n");
 #ifdef GPTPD_BUILD_X_86
-	gPTP_logMsg(GPTP_LOG_INFO, "gPTP Init x86 %s %s\n", __DATE__, __TIME__);
+	gPTP_logMsg(GPTP_LOG_NOTICE, "gPTP Init x86 %s %s\n", __DATE__, __TIME__);
 #else
-	gPTP_logMsg(GPTP_LOG_INFO, "gPTP Init bbb %s %s\n", __DATE__, __TIME__);
+	gPTP_logMsg(GPTP_LOG_NOTICE, "gPTP Init bbb %s %s\n", __DATE__, __TIME__);
 #endif
-	gPTP_logMsg(GPTP_LOG_INFO, "-------------------------------------\n\n");
+	gPTP_logMsg(GPTP_LOG_NOTICE, "-------------------------------------\n\n");
 }
 
 static void gptp_start(void)
@@ -145,7 +145,7 @@ static void gptp_start(void)
 	if (ioctl(gPTPd.sockfd, SIOCSHWTSTAMP, &if_hw) < 0)
 	    gPTP_logMsg(GPTP_LOG_ERROR, "SIOCSHWTSTAMP err:%d\n", errno);
 	else
-	    gPTP_logMsg(GPTP_LOG_INFO, "HW tx:%d rxFilter: %d \n", hwcfg.tx_type, hwcfg.rx_filter);
+	    gPTP_logMsg(GPTP_LOG_DEBUG, "HW tx:%d rxFilter: %d \n", hwcfg.tx_type, hwcfg.rx_filter);
 
 	/* Set timestamp options */
 	tsOpts = SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_RAW_HARDWARE | \
@@ -240,46 +240,6 @@ static void gptp_start(void)
 	
 }
 
-static void gptp_initTxBuf(void)
-{
-	struct ethhdr *eh = (struct ethhdr *)gPTPd.txBuf;
-	struct gPTPHdr * gh = (struct gPTPHdr *)&gPTPd.txBuf[sizeof(struct ethhdr)];
-
-	/* Initialize it */
-	memset(gPTPd.txBuf, 0, GPTP_TX_BUF_SIZE);
-
-	/* Fill in the Ethernet header */
-	eh->h_dest[0] = 0x01;
-	eh->h_dest[1] = 0x80;
-	eh->h_dest[2] = 0xC2;
-	eh->h_dest[3] = 0x00;
-	eh->h_dest[4] = 0x00;
-	eh->h_dest[5] = 0x0E;
-	eh->h_source[0] = 0x04;
-	eh->h_source[1] = 0xA3;
-	eh->h_source[2] = 0x16;
-	eh->h_source[3] = 0xAD;
-	eh->h_source[4] = 0x3A;
-	eh->h_source[5] = 0x33;
-
-	/* Fill in Ethertype field */
-	eh->h_proto = htons(ETH_P_1588);
-
-	/* Fill common gPTP header fields */
-	gh->h.f.b1.tsSpec      = (0x01 << 4);
-	gh->h.f.b2.ptpVer      = 0x02;
-	gh->h.f.srcPortIden[0] = 0x04;
-	gh->h.f.srcPortIden[1] = 0xA3;
-	gh->h.f.srcPortIden[2] = 0x16;
-	gh->h.f.srcPortIden[3] = 0xFF;
-	gh->h.f.srcPortIden[4] = 0xFE;
-	gh->h.f.srcPortIden[5] = 0xAD;
-	gh->h.f.srcPortIden[6] = 0x3A;
-	gh->h.f.srcPortIden[7] = 0x33;
-	gh->h.f.srcPortIden[8] = 0x00;
-	gh->h.f.srcPortIden[9] = 0x01;
-}
-
 static int gptp_parseMsg(void)
 {
 	int evt = GPTP_EVT_NONE;
@@ -290,12 +250,16 @@ static int gptp_parseMsg(void)
 		switch(gh->h.f.b1.msgType & 0x0f)
 		{
 			case GPTP_MSG_TYPE_PDELAY_REQ:
+				gPTPd.dm.rxSeqNo = gh->h.f.seqNo;
+				gPTP_logMsg(GPTP_LOG_INFO, "gPTP PDelayReq (%d) Rcvd \n", gh->h.f.seqNo);
 				evt = GPTP_EVT_DM_PDELAY_REQ;
 				break;
 			case GPTP_MSG_TYPE_PDELAY_RESP:
+				gPTP_logMsg(GPTP_LOG_INFO, "gPTP PDelayResp (%d) Rcvd \n", gh->h.f.seqNo);
 				evt = GPTP_EVT_DM_PDELAY_RESP;
 				break;
 			case GPTP_MSG_TYPE_PDELAY_RESP_FLWUP:
+				gPTP_logMsg(GPTP_LOG_INFO, "gPTP PDelayRespFlwUp (%d) Rcvd \n", gh->h.f.seqNo);
 				evt = GPTP_EVT_DM_PDELAY_RESP_FLWUP;
 				break;
 			default:
@@ -308,11 +272,26 @@ static int gptp_parseMsg(void)
 	return evt;
 }
 
+static void gptp_handleEvent(int evt)
+{
+	/* Handle the events when available */
+	if (evt != GPTP_EVT_NONE) {
+		switch(evt & GPTP_EVT_DEST_MASK) {
+			case GPTP_EVT_DEST_DM:
+				dmHandleEvent(&gPTPd, evt);
+				break;
+			default:
+				dmHandleEvent(&gPTPd, evt);
+				break;
+		}
+	}
+}
+
 static void gptp_exit(void)
 {
 	unintDM(&gPTPd);
 	close(gPTPd.sockfd);
-	gPTP_logMsg(GPTP_LOG_INFO, "gPTP Exit \n");
+	gPTP_logMsg(GPTP_LOG_NOTICE, "gPTP Exit \n");
 	gPTP_closeLog();
 }
 
@@ -325,7 +304,7 @@ int main(int argc, char* argv[])
 	gptp_setup();
 
 	/* Initialize tx */
-	gptp_initTxBuf();
+	gptp_initTxBuf(&gPTPd);
 
 	/* Start operations */
 	gptp_start();
@@ -334,38 +313,38 @@ int main(int argc, char* argv[])
         while (1) {
 		int cnt = 0;
 		int evt = GPTP_EVT_NONE;
+		u64 currTickTS = gptp_getCurrMilliSecTS();
+
+		gPTP_logMsg(GPTP_LOG_DEBUG, "\n");
+
+		/* Check for any timer event */
+		for(int i = 0; i < GPTP_NUM_TIMERS; i++) {
+			if (gPTPd.timers[i].timeInterval > 0) {
+				gPTP_logMsg(GPTP_LOG_DEBUG, "gPTP timer %d timeInt %lu timeEvt %d diffTS %ld\n",
+					    i, gPTPd.timers[i].timeInterval, gPTPd.timers[i].timerEvt, (currTickTS - gPTPd.timers[i].lastTS));
+				/* When the requested time elapsed for this timer */
+				if((gPTPd.timers[i].lastTS + gPTPd.timers[i].timeInterval) < currTickTS)			
+				{
+					/* Update and handle the timer event */
+					gPTPd.timers[i].lastTS = currTickTS;
+					gptp_handleEvent(gPTPd.timers[i].timerEvt);
+				}
+			}
+		}
 
 		/* Wait for GPTP events/messages */
-		memset(gPTPd.rxBuf, 0, GPTP_RX_BUF_SIZE);
-		memset(gPTPd.tsBuf, 0, GPTP_CON_TS_BUF_SIZE);
-		gPTPd.rxMsgHdr.msg_iov = &gPTPd.rxiov;
-		gPTPd.rxMsgHdr.msg_iovlen = 1;
-		gPTPd.rxMsgHdr.msg_control=gPTPd.tsBuf;
-		gPTPd.rxMsgHdr.msg_controllen=GPTP_CON_TS_BUF_SIZE;
-		gPTPd.rxMsgHdr.msg_flags=0;
-		gPTPd.rxMsgHdr.msg_name=&gPTPd.rxSockAddress;
-		gPTPd.rxMsgHdr.msg_namelen=sizeof(struct sockaddr_ll);
+		gptp_initRxBuf(&gPTPd);
 		cnt = recvmsg(gPTPd.sockfd, &gPTPd.rxMsgHdr, 0);
-	
-		gPTP_logMsg(GPTP_LOG_DEBUG, "\ngPTP recvmsg %d %d\n", cnt, errno);
 
-		if (cnt >= 1)
-			evt = gptp_parseMsg(); 
-		else if((cnt == -1) && (errno == EAGAIN))
-			evt = GPTP_EVT_ONE_SEC_TICK;
-		else
+		gPTP_logMsg(GPTP_LOG_DEBUG, "gPTP recvmsg %d %d\n", cnt, errno);
+
+		/* When data available parse the command */
+		if (cnt >= 1) {
+			evt = gptp_parseMsg();
+			/* And handle the received command */
+			gptp_handleEvent(evt);
+		} else {
 			sleep(1);
-
-		/* Handle the events when available */
-		if (evt != GPTP_EVT_NONE) {
-			switch(evt & GPTP_EVT_DEST_MASK) {
-				case GPTP_EVT_DEST_DM:
-					dmHandleEvent(&gPTPd, evt);
-					break;
-				default:
-					dmHandleEvent(&gPTPd, evt);
-					break;
-			}
 		}
         }
 
