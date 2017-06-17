@@ -1,5 +1,6 @@
 
 #include "delaymsr.h"
+#include "bmc.h"
 
 struct gPTPd gPTPd;
 
@@ -48,7 +49,13 @@ static void gptp_init(int argc, char* argv[])
 		argIdx++;
 	}
 	
+	/* Initialize modules */
 	initDM(&gPTPd);
+	initBMC(&gPTPd);
+
+	/* Init the state machines */
+	dmHandleEvent(&gPTPd, GPTP_EVT_STATE_ENTRY);
+	bmcHandleEvent(&gPTPd, GPTP_EVT_STATE_ENTRY);
 }
 
 static void gptp_setup(void)
@@ -104,13 +111,16 @@ static void gptp_setup(void)
 	gPTP_logMsg(GPTP_LOG_NOTICE, "gPTP Init bbb %s %s\n", __DATE__, __TIME__);
 #endif
 	gPTP_logMsg(GPTP_LOG_NOTICE, "-------------------------------------\n\n");
+
+#if 0
+	gPTP_logMsg(GPTP_LOG_DEBUG, "sizeof(time_t): %d\n", sizeof(time_t));
+	gPTP_logMsg(GPTP_LOG_DEBUG, "sizeof(gPTPHdr): %d\n", sizeof(struct gPTPHdr));
+	gPTP_logMsg(GPTP_LOG_DEBUG, "sizeof(gPTPHdr): %d\n\n", sizeof(struct ethhdr));
+#endif
 }
 
 static void gptp_start(void)
 {
-	struct ifreq if_idx;
-	struct ifreq if_mac;
-	struct ifreq if_hw;
 	struct ifreq if_opts;
 	int tsOpts = 0;
 	struct hwtstamp_config hwcfg;
@@ -123,26 +133,26 @@ static void gptp_start(void)
 	}
 
 	/* Get the index of the interface to send on */
-	memset(&if_idx, 0, sizeof(struct ifreq));
-	strncpy(if_idx.ifr_name, gPTPd.ifName, GPTP_IF_NAME_SIZE-1);
-	if (ioctl(gPTPd.sockfd, SIOCGIFINDEX, &if_idx) < 0)
+	memset(&gPTPd.if_idx, 0, sizeof(struct ifreq));
+	strncpy(gPTPd.if_idx.ifr_name, gPTPd.ifName, GPTP_IF_NAME_SIZE-1);
+	if (ioctl(gPTPd.sockfd, SIOCGIFINDEX, &gPTPd.if_idx) < 0)
 	    gPTP_logMsg(GPTP_LOG_ERROR, "SIOCGIFINDEX err:%d\n", errno);
 	/* Get the MAC address of the interface to send on */
-	memset(&if_mac, 0, sizeof(struct ifreq));
-	strncpy(if_mac.ifr_name, gPTPd.ifName, GPTP_IF_NAME_SIZE-1);
-	if (ioctl(gPTPd.sockfd, SIOCGIFHWADDR, &if_mac) < 0)
+	memset(&gPTPd.if_mac, 0, sizeof(struct ifreq));
+	strncpy(gPTPd.if_mac.ifr_name, gPTPd.ifName, GPTP_IF_NAME_SIZE-1);
+	if (ioctl(gPTPd.sockfd, SIOCGIFHWADDR, &gPTPd.if_mac) < 0)
 	    gPTP_logMsg(GPTP_LOG_ERROR, "SIOCGIFHWADDR err:%d\n", errno);
 
 #ifndef GPTPD_BUILD_X_86
 
 	/* Set HW timestamp */
-	memset(&if_hw, 0, sizeof(struct ifreq));
+	memset(&gPTPd.if_hw, 0, sizeof(struct ifreq));
 	memset(&hwcfg, 0, sizeof(struct hwtstamp_config));
-	strncpy(if_hw.ifr_name, gPTPd.ifName, GPTP_IF_NAME_SIZE-1);
+	strncpy(gPTPd.if_hw.ifr_name, gPTPd.ifName, GPTP_IF_NAME_SIZE-1);
 	hwcfg.tx_type = HWTSTAMP_TX_ON;
 	hwcfg.rx_filter = HWTSTAMP_FILTER_PTP_V2_L2_EVENT;
-	if_hw.ifr_data = (void*)&hwcfg;
-	if (ioctl(gPTPd.sockfd, SIOCSHWTSTAMP, &if_hw) < 0)
+	gPTPd.if_hw.ifr_data = (void*)&hwcfg;
+	if (ioctl(gPTPd.sockfd, SIOCSHWTSTAMP, &gPTPd.if_hw) < 0)
 	    gPTP_logMsg(GPTP_LOG_ERROR, "SIOCSHWTSTAMP err:%d\n", errno);
 	else
 	    gPTP_logMsg(GPTP_LOG_DEBUG, "HW tx:%d rxFilter: %d \n", hwcfg.tx_type, hwcfg.rx_filter);
@@ -156,7 +166,7 @@ static void gptp_start(void)
 #else
 
 	/* Set timestamp options */
-	tsOpts = SOF_TIMESTAMPING_RX_SOFTWARE | SOF_TIMESTAMPING_TX_SOFTWARE | SOF_TIMESTAMPING_TX_SCHED | SOF_TIMESTAMPING_SOFTWARE | \
+	tsOpts = SOF_TIMESTAMPING_RX_SOFTWARE | SOF_TIMESTAMPING_TX_SOFTWARE | SOF_TIMESTAMPING_SOFTWARE | \
 		 SOF_TIMESTAMPING_OPT_CMSG | SOF_TIMESTAMPING_OPT_ID;
 	if (setsockopt(gPTPd.sockfd, SOL_SOCKET, SO_TIMESTAMPING, &tsOpts, sizeof(tsOpts)) < 0)
 	    gPTP_logMsg(GPTP_LOG_ERROR, "SO_TIMESTAMPING err:%d\n", errno);
@@ -192,7 +202,7 @@ static void gptp_start(void)
 	/* Index of the network device */
 	gPTPd.txSockAddress.sll_family = AF_PACKET;
 	gPTPd.txSockAddress.sll_protocol = htons(ETH_P_1588);
-	gPTPd.txSockAddress.sll_ifindex = if_idx.ifr_ifindex;
+	gPTPd.txSockAddress.sll_ifindex = gPTPd.if_idx.ifr_ifindex;
 	/* Address length*/
 	gPTPd.txSockAddress.sll_halen = ETH_ALEN;
 	/* Destination MAC */
@@ -213,16 +223,16 @@ static void gptp_start(void)
 	/* Index of the network device */
 	gPTPd.rxSockAddress.sll_family = AF_PACKET;
 	gPTPd.rxSockAddress.sll_protocol = htons(ETH_P_1588);
-	gPTPd.rxSockAddress.sll_ifindex = if_idx.ifr_ifindex;
+	gPTPd.rxSockAddress.sll_ifindex = gPTPd.if_idx.ifr_ifindex;
 	/* Address length*/
 	gPTPd.rxSockAddress.sll_halen = ETH_ALEN;
 	/* Destination MAC */
-	gPTPd.txSockAddress.sll_addr[0] = 0x01;
-	gPTPd.txSockAddress.sll_addr[1] = 0x80;
-	gPTPd.txSockAddress.sll_addr[2] = 0xC2;
-	gPTPd.txSockAddress.sll_addr[3] = 0x00;
-	gPTPd.txSockAddress.sll_addr[4] = 0x00;
-	gPTPd.txSockAddress.sll_addr[5] = 0x0E;
+	gPTPd.rxSockAddress.sll_addr[0] = 0x01;
+	gPTPd.rxSockAddress.sll_addr[1] = 0x80;
+	gPTPd.rxSockAddress.sll_addr[2] = 0xC2;
+	gPTPd.rxSockAddress.sll_addr[3] = 0x00;
+	gPTPd.rxSockAddress.sll_addr[4] = 0x00;
+	gPTPd.rxSockAddress.sll_addr[5] = 0x0E;
 
 	/* Set the message header */
 	gPTPd.rxiov.iov_base = gPTPd.rxBuf;
@@ -233,11 +243,7 @@ static void gptp_start(void)
 	gPTPd.rxMsgHdr.msg_controllen=GPTP_CON_TS_BUF_SIZE;
 	gPTPd.rxMsgHdr.msg_flags=0;
 	gPTPd.rxMsgHdr.msg_name=&gPTPd.rxSockAddress;
-	gPTPd.rxMsgHdr.msg_namelen=sizeof(struct sockaddr_ll);
-
-	/* Start the other state machines */
-	dmHandleEvent(&gPTPd, GPTP_EVT_DM_ENABLE);
-	
+	gPTPd.rxMsgHdr.msg_namelen=sizeof(struct sockaddr_ll);	
 }
 
 static int gptp_parseMsg(void)
@@ -250,17 +256,22 @@ static int gptp_parseMsg(void)
 		switch(gh->h.f.b1.msgType & 0x0f)
 		{
 			case GPTP_MSG_TYPE_PDELAY_REQ:
-				gPTPd.dm.rxSeqNo = gh->h.f.seqNo;
-				gPTP_logMsg(GPTP_LOG_INFO, "gPTP PDelayReq (%d) Rcvd \n", gh->h.f.seqNo);
+				gPTPd.dm.rxSeqNo = gptp_chgEndianess16(gh->h.f.seqNo);
+				memcpy(&gPTPd.dm.reqPortIden[0], &gh->h.f.srcPortIden[0], GPTP_PORT_IDEN_LEN);
+				gPTP_logMsg(GPTP_LOG_INFO, "gPTP PDelayReq (%d) Rcvd \n", gPTPd.dm.rxSeqNo);
 				evt = GPTP_EVT_DM_PDELAY_REQ;
 				break;
 			case GPTP_MSG_TYPE_PDELAY_RESP:
-				gPTP_logMsg(GPTP_LOG_INFO, "gPTP PDelayResp (%d) Rcvd \n", gh->h.f.seqNo);
+				gPTP_logMsg(GPTP_LOG_INFO, "gPTP PDelayResp (%d) Rcvd \n", gptp_chgEndianess16(gh->h.f.seqNo));
 				evt = GPTP_EVT_DM_PDELAY_RESP;
 				break;
 			case GPTP_MSG_TYPE_PDELAY_RESP_FLWUP:
-				gPTP_logMsg(GPTP_LOG_INFO, "gPTP PDelayRespFlwUp (%d) Rcvd \n", gh->h.f.seqNo);
+				gPTP_logMsg(GPTP_LOG_INFO, "gPTP PDelayRespFlwUp (%d) Rcvd \n", gptp_chgEndianess16(gh->h.f.seqNo));
 				evt = GPTP_EVT_DM_PDELAY_RESP_FLWUP;
+				break;
+			case GPTP_MSG_TYPE_ANNOUNCE:
+				gPTP_logMsg(GPTP_LOG_INFO, "gPTP Announce (%d) Rcvd \n", gptp_chgEndianess16(gh->h.f.seqNo));
+				evt = GPTP_EVT_BMC_ANNOUNCE_MSG;
 				break;
 			default:
 				break;
@@ -280,8 +291,11 @@ static void gptp_handleEvent(int evt)
 			case GPTP_EVT_DEST_DM:
 				dmHandleEvent(&gPTPd, evt);
 				break;
+			case GPTP_EVT_DEST_BMC:
+				bmcHandleEvent(&gPTPd, evt);
+				break;
 			default:
-				dmHandleEvent(&gPTPd, evt);
+				gPTP_logMsg(GPTP_LOG_ERROR, "gPTP unknown evt 0x%x\n", evt);
 				break;
 		}
 	}
@@ -289,6 +303,7 @@ static void gptp_handleEvent(int evt)
 
 static void gptp_exit(void)
 {
+	unintBMC(&gPTPd);
 	unintDM(&gPTPd);
 	close(gPTPd.sockfd);
 	gPTP_logMsg(GPTP_LOG_NOTICE, "gPTP Exit \n");
@@ -303,11 +318,15 @@ int main(int argc, char* argv[])
 	/* Setup the module */
 	gptp_setup();
 
+	/* Start operations */
+	gptp_start();
+
 	/* Initialize tx */
 	gptp_initTxBuf(&gPTPd);
 
-	/* Start operations */
-	gptp_start();
+	/* Start the state machines */
+	dmHandleEvent(&gPTPd, GPTP_EVT_DM_ENABLE);
+	bmcHandleEvent(&gPTPd, GPTP_EVT_BMC_ENABLE);
 
 	/* Event loop */
         while (1) {

@@ -11,14 +11,14 @@
 void initDM(struct gPTPd* gPTPd);
 void unintDM(struct gPTPd* gPTPd);
 void dmHandleEvent(struct gPTPd* gPTPd, int evtId);
-void dmHandleStateChange(struct gPTPd* gPTPd, int toState);
 
 #ifdef DELAY_MSR_MODULE
+static void dmHandleStateChange(struct gPTPd* gPTPd, int toState);
 static void sendDelayReq(struct gPTPd* gPTPd);
 static void sendDelayResp(struct gPTPd* gPTPd);
 static void sendDelayRespFlwUp(struct gPTPd* gPTPd);
-static void getTxTS(struct gPTPd* gPTPd, struct gPTPts* ts);
-static void getRxTS(struct gPTPd* gPTPd, struct gPTPts* ts);
+static void getTxTS(struct gPTPd* gPTPd, struct timespec* ts);
+static void getRxTS(struct gPTPd* gPTPd, struct timespec* ts);
 #endif
 
 #endif

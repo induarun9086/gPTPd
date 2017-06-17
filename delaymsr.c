@@ -6,9 +6,8 @@
 void initDM(struct gPTPd* gPTPd)
 {
 	gPTPd->dm.state = DM_STATE_INIT;
-	gPTPd->dm.delayReqInterval = 1000;
+	gPTPd->dm.delayReqInterval = 2000;
 	gPTPd->dm.delayReqTimeOut  = 8000;
-	gPTPd->dm.initalDelayReqSent = FALSE;
 }
 
 void unintDM(struct gPTPd* gPTPd)
@@ -18,6 +17,8 @@ void unintDM(struct gPTPd* gPTPd)
 
 void dmHandleEvent(struct gPTPd* gPTPd, int evtId)
 {
+	struct timespec diff[3];
+
 	gPTP_logMsg(GPTP_LOG_INFO, "gPTP dmHandleEvent st: %d evt: 0x%x \n", gPTPd->dm.state, evtId);
 	
 	switch(gPTPd->dm.state) {
@@ -27,7 +28,6 @@ void dmHandleEvent(struct gPTPd* gPTPd, int evtId)
 				case GPTP_EVT_STATE_ENTRY:
 					break;
 				case GPTP_EVT_DM_ENABLE:
-					gPTPd->dm.initalDelayReqSent = FALSE;
 					dmHandleStateChange(gPTPd, DM_STATE_IDLE);
 					break;
 				case GPTP_EVT_STATE_EXIT:
@@ -40,16 +40,13 @@ void dmHandleEvent(struct gPTPd* gPTPd, int evtId)
 		case DM_STATE_IDLE:
 			switch (evtId) {
 				case GPTP_EVT_STATE_ENTRY:
-					if(gPTPd->dm.initalDelayReqSent == TRUE) {
-						gptp_startTimer(gPTPd, GPTP_TIMER_DELAYREQ_RPT, gPTPd->dm.delayReqInterval, GPTP_EVT_DM_PDELAY_REQ_RPT);
-						break;
-					}
+					gptp_startTimer(gPTPd, GPTP_TIMER_DELAYREQ_RPT, gPTPd->dm.delayReqInterval, GPTP_EVT_DM_PDELAY_REQ_RPT);
+					break;
 				case GPTP_EVT_DM_PDELAY_REQ_RPT:
 					gptp_stopTimer(gPTPd, GPTP_TIMER_DELAYREQ_RPT);
-					memset(&gPTPd->ts[0], 0, sizeof(struct gPTPts) * 4);
+					memset(&gPTPd->ts[0], 0, sizeof(struct timespec) * 4);
 					sendDelayReq(gPTPd);
 					getTxTS(gPTPd, &gPTPd->ts[0]);
-					gPTPd->dm.initalDelayReqSent = TRUE;
 					dmHandleStateChange(gPTPd, DM_STATE_DELAY_RESP_WAIT);
 					break;
 				case GPTP_EVT_DM_PDELAY_REQ:
@@ -57,7 +54,6 @@ void dmHandleEvent(struct gPTPd* gPTPd, int evtId)
 					sendDelayResp(gPTPd);
 					getTxTS(gPTPd, &gPTPd->ts[5]);
 					sendDelayRespFlwUp(gPTPd);
-					getTxTS(gPTPd, NULL);
 					break;
 				case GPTP_EVT_STATE_EXIT:
 					break;
@@ -76,16 +72,15 @@ void dmHandleEvent(struct gPTPd* gPTPd, int evtId)
 					sendDelayResp(gPTPd);
 					getTxTS(gPTPd, &gPTPd->ts[5]);
 					sendDelayRespFlwUp(gPTPd);
-					getTxTS(gPTPd, NULL);
 					break;
 				case GPTP_EVT_DM_PDELAY_REQ_TO:
-					memset(&gPTPd->ts[0], 0, sizeof(struct gPTPts) * 4);
+					memset(&gPTPd->ts[0], 0, sizeof(struct timespec) * 4);
 					sendDelayReq(gPTPd);
 					getTxTS(gPTPd, &gPTPd->ts[0]);
 					break;
 				case GPTP_EVT_DM_PDELAY_RESP:
 					gptp_stopTimer(gPTPd, GPTP_TIMER_DELAYREQ_TO);
-					memcpy(&gPTPd->ts[1], &gPTPd->rxBuf[GPTP_BODY_OFFSET], sizeof(struct gPTPts));
+					gptp_copyTSFromBuf(&gPTPd->ts[1], &gPTPd->rxBuf[GPTP_BODY_OFFSET]);
 					getRxTS(gPTPd, &gPTPd->ts[3]);
 					dmHandleStateChange(gPTPd, DM_STATE_DELAY_RESP_FLWUP_WAIT);
 					break;
@@ -105,12 +100,15 @@ void dmHandleEvent(struct gPTPd* gPTPd, int evtId)
 					sendDelayResp(gPTPd);
 					getTxTS(gPTPd, &gPTPd->ts[5]);
 					sendDelayRespFlwUp(gPTPd);
-					getTxTS(gPTPd, NULL);
 					break;
 				case GPTP_EVT_DM_PDELAY_RESP_FLWUP:
-					getRxTS(gPTPd, NULL);
-					memcpy(&gPTPd->ts[2], &gPTPd->rxBuf[GPTP_BODY_OFFSET], sizeof(struct gPTPts));
-					gPTPd->msrdDelay = ((gPTPd->ts[3].ns - gPTPd->ts[0].ns) - (gPTPd->ts[2].ns - gPTPd->ts[1].ns)) / 2;
+					gptp_copyTSFromBuf(&gPTPd->ts[2], &gPTPd->rxBuf[GPTP_BODY_OFFSET]);
+					for(int i = 0; i < 4; i++)
+						gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ t%d: %llu_%lu\n", (i+1), (u64)gPTPd->ts[i].tv_sec, gPTPd->ts[i].tv_nsec);
+					gptp_timespec_diff(&gPTPd->ts[0],&gPTPd->ts[3],&diff[0]);
+					gptp_timespec_diff(&gPTPd->ts[1],&gPTPd->ts[2],&diff[1]);
+					gptp_timespec_diff(&diff[1],&diff[0],&diff[2]);
+					gPTPd->msrdDelay = diff[2].tv_nsec/ 2;
 					gPTP_logMsg(GPTP_LOG_NOTICE, "-------------------------->gPTP msrdDelay: %d\n", gPTPd->msrdDelay);
 					dmHandleStateChange(gPTPd, DM_STATE_IDLE);
 					break;
@@ -126,7 +124,7 @@ void dmHandleEvent(struct gPTPd* gPTPd, int evtId)
 	}
 }
 
-void dmHandleStateChange(struct gPTPd* gPTPd, int toState)
+static void dmHandleStateChange(struct gPTPd* gPTPd, int toState)
 {
 	dmHandleEvent(gPTPd, GPTP_EVT_STATE_EXIT);
 	gPTPd->dm.state = toState;
@@ -140,23 +138,27 @@ static void sendDelayReq(struct gPTPd* gPTPd)
 	struct gPTPHdr * gh = (struct gPTPHdr *)&gPTPd->txBuf[sizeof(struct ethhdr)];
 
 	/* Fill gPTP header */
-	gPTPd->dm.txSeqNo++;
-	gh->h.f.seqNo = gPTPd->dm.txSeqNo;
+	gh->h.f.seqNo = gptp_chgEndianess16(gPTPd->dm.txSeqNo);
 	gh->h.f.b1.msgType = ((0x01 << 4) | GPTP_MSG_TYPE_PDELAY_REQ);
+	gh->h.f.flags = gptp_chgEndianess16(0x0000);
 
 	gh->h.f.ctrl = 0x05;
-	gh->h.f.logMsgInt = 0x7f;
+	gh->h.f.logMsgInt = 0x01;
 
 	/* Add gPTP header size */
 	txLen += sizeof(struct gPTPHdr);
 
 	/* PTP body */
+	memset(&gPTPd->txBuf[GPTP_BODY_OFFSET], 0, (GPTP_TX_BUF_SIZE - GPTP_BODY_OFFSET));
 	txLen += 20;
+
+	/* Insert length */
+	gh->h.f.msgLen = gptp_chgEndianess16(txLen - sizeof(struct ethhdr));
 
 	if ((err = sendto(gPTPd->sockfd, gPTPd->txBuf, txLen, 0, (struct sockaddr*)&gPTPd->txSockAddress, sizeof(struct sockaddr_ll))) < 0)
 		gPTP_logMsg(GPTP_LOG_DEBUG, "PDelayReq Send failed %d %d\n", err, errno);	
 	else
-		gPTP_logMsg(GPTP_LOG_INFO, ">>> PDelayReq (%d) sent\n", gPTPd->dm.txSeqNo);
+		gPTP_logMsg(GPTP_LOG_INFO, ">>> PDelayReq (%d) sent\n", gPTPd->dm.txSeqNo++);
 }
 
 static void sendDelayResp(struct gPTPd* gPTPd)
@@ -166,8 +168,9 @@ static void sendDelayResp(struct gPTPd* gPTPd)
 	struct gPTPHdr * gh = (struct gPTPHdr *)&gPTPd->txBuf[sizeof(struct ethhdr)];
 
 	/* Fill gPTP header */
-	gh->h.f.seqNo = gPTPd->dm.rxSeqNo;
+	gh->h.f.seqNo = gptp_chgEndianess16(gPTPd->dm.rxSeqNo);
 	gh->h.f.b1.msgType = ((0x01 << 4) | GPTP_MSG_TYPE_PDELAY_RESP);
+	gh->h.f.flags = gptp_chgEndianess16(0x0001);
 
 	gh->h.f.ctrl = 0x05;
 	gh->h.f.logMsgInt = 0x7f;
@@ -176,8 +179,14 @@ static void sendDelayResp(struct gPTPd* gPTPd)
 	txLen += sizeof(struct gPTPHdr);
 
 	/* PTP body */
-	memcpy(&gPTPd->txBuf[txLen], &gPTPd->ts[4], sizeof(struct gPTPts));
-	txLen += 20;
+	memset(&gPTPd->txBuf[GPTP_BODY_OFFSET], 0, (GPTP_TX_BUF_SIZE - GPTP_BODY_OFFSET));
+	gptp_copyTSToBuf(&gPTPd->ts[4], &gPTPd->txBuf[txLen]);
+	txLen += GPTP_TS_LEN;
+	memcpy(&gPTPd->txBuf[txLen], &gPTPd->dm.reqPortIden[0], GPTP_PORT_IDEN_LEN);
+	txLen += GPTP_PORT_IDEN_LEN;
+
+	/* Insert length */
+	gh->h.f.msgLen = gptp_chgEndianess16(txLen - sizeof(struct ethhdr));
 
 	if ((err = sendto(gPTPd->sockfd, gPTPd->txBuf, txLen, 0, (struct sockaddr*)&gPTPd->txSockAddress, sizeof(struct sockaddr_ll))) < 0)
 		gPTP_logMsg(GPTP_LOG_DEBUG, "PDelayResp Send failed %d %d\n", err, errno);	
@@ -192,8 +201,9 @@ static void sendDelayRespFlwUp(struct gPTPd* gPTPd)
 	struct gPTPHdr * gh = (struct gPTPHdr *)&gPTPd->txBuf[sizeof(struct ethhdr)];
 
 	/* Fill gPTP header */
-	gh->h.f.seqNo = gPTPd->dm.rxSeqNo;
+	gh->h.f.seqNo = gptp_chgEndianess16(gPTPd->dm.rxSeqNo);
 	gh->h.f.b1.msgType = ((0x01 << 4) | GPTP_MSG_TYPE_PDELAY_RESP_FLWUP);
+	gh->h.f.flags = gptp_chgEndianess16(0x0000);
 
 	gh->h.f.ctrl = 0x05;
 	gh->h.f.logMsgInt = 0x7f;
@@ -202,8 +212,14 @@ static void sendDelayRespFlwUp(struct gPTPd* gPTPd)
 	txLen += sizeof(struct gPTPHdr);
 
 	/* PTP body */
-	memcpy(&gPTPd->txBuf[txLen], &gPTPd->ts[5], sizeof(struct gPTPts));
-	txLen += 20;
+	memset(&gPTPd->txBuf[GPTP_BODY_OFFSET], 0, (GPTP_TX_BUF_SIZE - GPTP_BODY_OFFSET));
+	gptp_copyTSToBuf(&gPTPd->ts[5], &gPTPd->txBuf[txLen]);
+	txLen += GPTP_TS_LEN;
+	memcpy(&gPTPd->txBuf[txLen], &gPTPd->dm.reqPortIden[0], GPTP_PORT_IDEN_LEN);
+	txLen += GPTP_PORT_IDEN_LEN;
+
+	/* Insert length */
+	gh->h.f.msgLen = gptp_chgEndianess16(txLen - sizeof(struct ethhdr));
 
 	if ((err = sendto(gPTPd->sockfd, gPTPd->txBuf, txLen, 0, (struct sockaddr*)&gPTPd->txSockAddress, sizeof(struct sockaddr_ll))) < 0)
 		gPTP_logMsg(GPTP_LOG_DEBUG, "PDelayRespFlwUp Send failed %d %d\n", err, errno);	
@@ -211,7 +227,7 @@ static void sendDelayRespFlwUp(struct gPTPd* gPTPd)
 		gPTP_logMsg(GPTP_LOG_INFO, "~~~ PDelayRespFlwUp (%d) sent\n", gPTPd->dm.rxSeqNo);
 }
 
-static void getTxTS(struct gPTPd* gPTPd, struct gPTPts* ts)
+static void getTxTS(struct gPTPd* gPTPd, struct timespec* ts)
 {
 	static short sk_events = POLLPRI;
 	static short sk_revents = POLLPRI;
@@ -248,7 +264,8 @@ static void getTxTS(struct gPTPd* gPTPd, struct gPTPts* ts)
 							for(int i = 0; i < 3; i++)
 								if((rts[i].tv_sec != 0) || (rts[i].tv_nsec != 0)) {
 									if(ts != NULL) {
-										ts->ns = rts[i].tv_nsec;
+                                                                                ts->tv_sec =  rts[i].tv_sec;
+										ts->tv_nsec = rts[i].tv_nsec;
 									}							
 									gPTP_logMsg(GPTP_LOG_INFO, "TxTS: %d: sec: %d nsec: %d \n", i, rts[i].tv_sec, rts[i].tv_nsec);
 								}
@@ -265,7 +282,7 @@ static void getTxTS(struct gPTPd* gPTPd, struct gPTPts* ts)
 }
 
 
-static void getRxTS(struct gPTPd* gPTPd, struct gPTPts* ts)
+static void getRxTS(struct gPTPd* gPTPd, struct timespec* ts)
 {
 	int level, type;
 	struct cmsghdr *cm;
@@ -283,7 +300,8 @@ static void getRxTS(struct gPTPd* gPTPd, struct gPTPts* ts)
 				for(int i = 0; i < 3; i++)
 					if((rts[i].tv_sec != 0) || (rts[i].tv_nsec != 0)) {
 						if(ts != NULL) {
-							ts->ns = rts[i].tv_nsec;
+							ts->tv_sec = rts[i].tv_sec;
+							ts->tv_nsec = rts[i].tv_nsec;
 						}
 						gPTP_logMsg(GPTP_LOG_INFO, "RxTS: %d: sec: %d nsec: %d \n", i, rts[i].tv_sec, rts[i].tv_nsec);
 					}
@@ -296,5 +314,7 @@ static void getRxTS(struct gPTPd* gPTPd, struct gPTPts* ts)
 		}
 	}
 }
+
+
 
 
