@@ -33,7 +33,9 @@
 #define GPTP_TIMER_DELAYREQ_TO            1
 #define GPTP_TIMER_ANNOUNCE_RPT           2
 #define GPTP_TIMER_ANNOUNCE_TO            3
-#define GPTP_NUM_TIMERS                   4
+#define GPTP_TIMER_SYNC_RPT               4
+#define GPTP_TIMER_SYNC_TO                5
+#define GPTP_NUM_TIMERS                   6
 #define GPTP_TIMER_INVALID                GPTP_NUM_TIMERS
 
 /* Event destinations */
@@ -41,8 +43,7 @@
 #define GPTP_EVT_DEST_ALL                 0x00000000
 #define GPTP_EVT_DEST_DM                  0x00010000
 #define GPTP_EVT_DEST_BMC                 0x00020000
-#define GPTP_EVT_DEST_MSTR                0x00040000
-#define GPTP_EVT_DEST_SLV                 0x00080000
+#define GPTP_EVT_DEST_CS                  0x00040000
 
 /* list of common events */
 #define GPTP_EVT_NONE                     (GPTP_EVT_DEST_ALL | 0x0)
@@ -62,6 +63,13 @@
 #define GPTP_EVT_BMC_ANNOUNCE_RPT         (GPTP_EVT_DEST_BMC | 0x4)
 #define GPTP_EVT_BMC_ANNOUNCE_TO          (GPTP_EVT_DEST_BMC | 0x5)
 #define GPTP_EVT_BMC_ANNOUNCE_MSG         (GPTP_EVT_DEST_BMC | 0x6)
+
+/* list of best master clock events */
+#define GPTP_EVT_CS_ENABLE                (GPTP_EVT_DEST_CS | 0x0)
+#define GPTP_EVT_CS_SYNC_RPT              (GPTP_EVT_DEST_CS | 0x4)
+#define GPTP_EVT_CS_SYNC_TO               (GPTP_EVT_DEST_CS | 0x5)
+#define GPTP_EVT_CS_SYNC_MSG              (GPTP_EVT_DEST_CS | 0x6)
+#define GPTP_EVT_CS_SYNC_FLWUP_MSG        (GPTP_EVT_DEST_CS | 0x7)
 
 /* GPTP types */
 #define GPTP_ETHEDR_HDR_LEN               14
@@ -171,6 +179,13 @@ struct bmcst {
 	u32 announceTimeout;
 };
 
+struct csst {
+	int state;
+	u16 syncSeqNo;
+	u32 syncInterval;
+	u32 syncTimeout;
+};
+
 struct gPTPd {
 	int  sockfd;
 	int  logLevel;
@@ -197,6 +212,7 @@ struct gPTPd {
 	struct timer timers[GPTP_NUM_TIMERS];
 	struct dmst dm;
 	struct bmcst bmc;
+	struct csst cs;
 };
 
 

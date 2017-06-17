@@ -1,6 +1,7 @@
 
 #include "delaymsr.h"
 #include "bmc.h"
+#include "sync.h"
 
 struct gPTPd gPTPd;
 
@@ -52,6 +53,7 @@ static void gptp_init(int argc, char* argv[])
 	/* Initialize modules */
 	initDM(&gPTPd);
 	initBMC(&gPTPd);
+	initCS(&gPTPd);
 
 	/* Init the state machines */
 	dmHandleEvent(&gPTPd, GPTP_EVT_STATE_ENTRY);
@@ -273,6 +275,14 @@ static int gptp_parseMsg(void)
 				gPTP_logMsg(GPTP_LOG_INFO, "gPTP Announce (%d) Rcvd \n", gptp_chgEndianess16(gh->h.f.seqNo));
 				evt = GPTP_EVT_BMC_ANNOUNCE_MSG;
 				break;
+			case GPTP_MSG_TYPE_SYNC:
+				gPTP_logMsg(GPTP_LOG_INFO, "gPTP Sync (%d) Rcvd \n", gptp_chgEndianess16(gh->h.f.seqNo));
+				evt = GPTP_EVT_CS_SYNC_MSG;
+				break;
+			case GPTP_MSG_TYPE_SYNC_FLWUP:
+				gPTP_logMsg(GPTP_LOG_INFO, "gPTP SyncFlwUp (%d) Rcvd \n", gptp_chgEndianess16(gh->h.f.seqNo));
+				evt = GPTP_EVT_DM_PDELAY_RESP_FLWUP;
+				break;
 			default:
 				break;
 		}
@@ -294,6 +304,9 @@ static void gptp_handleEvent(int evt)
 			case GPTP_EVT_DEST_BMC:
 				bmcHandleEvent(&gPTPd, evt);
 				break;
+			case GPTP_EVT_DEST_CS:
+				csHandleEvent(&gPTPd, evt);
+				break;
 			default:
 				gPTP_logMsg(GPTP_LOG_ERROR, "gPTP unknown evt 0x%x\n", evt);
 				break;
@@ -303,6 +316,7 @@ static void gptp_handleEvent(int evt)
 
 static void gptp_exit(void)
 {
+	unintCS(&gPTPd);
 	unintBMC(&gPTPd);
 	unintDM(&gPTPd);
 	close(gPTPd.sockfd);
@@ -327,6 +341,7 @@ int main(int argc, char* argv[])
 	/* Start the state machines */
 	dmHandleEvent(&gPTPd, GPTP_EVT_DM_ENABLE);
 	bmcHandleEvent(&gPTPd, GPTP_EVT_BMC_ENABLE);
+	csHandleEvent(&gPTPd, GPTP_EVT_CS_ENABLE);
 
 	/* Event loop */
         while (1) {
