@@ -246,6 +246,11 @@ static void gptp_start(void)
 	gPTPd.rxMsgHdr.msg_flags=0;
 	gPTPd.rxMsgHdr.msg_name=&gPTPd.rxSockAddress;
 	gPTPd.rxMsgHdr.msg_namelen=sizeof(struct sockaddr_ll);	
+
+#ifndef GPTPD_BUILD_X_86
+	/* Open the hardware clock */
+	gPTPd.hwClkId = open("/dev/ptp0", O_RDWR);
+#endif
 }
 
 static int gptp_parseMsg(void)
@@ -281,7 +286,7 @@ static int gptp_parseMsg(void)
 				break;
 			case GPTP_MSG_TYPE_SYNC_FLWUP:
 				gPTP_logMsg(GPTP_LOG_NOTICE, "gPTP SyncFlwUp (%d) Rcvd \n", gptp_chgEndianess16(gh->h.f.seqNo));
-				evt = GPTP_EVT_DM_PDELAY_RESP_FLWUP;
+				evt = GPTP_EVT_CS_SYNC_FLWUP_MSG;
 				break;
 			default:
 				break;
@@ -316,6 +321,9 @@ static void gptp_handleEvent(int evt)
 
 static void gptp_exit(void)
 {
+#ifndef GPTPD_BUILD_X_86
+	close(gPTPd.hwClkId);
+#endif
 	unintCS(&gPTPd);
 	unintBMC(&gPTPd);
 	unintDM(&gPTPd);

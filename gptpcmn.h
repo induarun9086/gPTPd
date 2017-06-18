@@ -240,9 +240,10 @@ struct csst {
 
 struct gPTPd {
 	int  sockfd;
+	int  hwClkId;
 	int  logLevel;
 	bool daemonMode;
-	
+
 	u32   msrdDelay;
 
 	char txBuf[GPTP_TX_BUF_SIZE];
@@ -260,7 +261,7 @@ struct gPTPd {
 	struct sockaddr_ll txSockAddress;
 	struct sockaddr_ll rxSockAddress;
 
-	struct timespec ts[7];
+	struct timespec ts[8];
 	struct timer timers[GPTP_NUM_TIMERS];
 	struct dmst dm;
 	struct bmcst bmc;

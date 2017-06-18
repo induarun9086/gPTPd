@@ -51,8 +51,6 @@ void csHandleEvent(struct gPTPd* gPTPd, int evtId)
 				case GPTP_EVT_STATE_ENTRY:
 					gptp_startTimer(gPTPd, GPTP_TIMER_SYNC_RPT, gPTPd->cs.syncInterval, GPTP_EVT_CS_SYNC_RPT);
 					break;
-				case GPTP_EVT_CS_SYNC_MSG:
-					break;
 				case GPTP_EVT_CS_SYNC_RPT:
 					sendSync(gPTPd);
 					getTxTS(gPTPd, &gPTPd->ts[6]);
@@ -72,6 +70,20 @@ void csHandleEvent(struct gPTPd* gPTPd, int evtId)
 					gptp_startTimer(gPTPd, GPTP_TIMER_SYNC_TO, gPTPd->cs.syncTimeout, GPTP_EVT_CS_SYNC_TO);
 					break;
 				case GPTP_EVT_CS_SYNC_MSG:
+					break;
+				case GPTP_EVT_CS_SYNC_FLWUP_MSG:
+					gptp_copyTSFromBuf(&gPTPd->ts[7], &gPTPd->rxBuf[GPTP_BODY_OFFSET]);
+					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ SyncTime: %llu_%lu %lu\n", (u64)gPTPd->ts[7].tv_sec, gPTPd->ts[7].tv_nsec, gPTPd->msrdDelay);
+					gPTPd->ts[7].tv_nsec += gPTPd->msrdDelay;
+					while(gPTPd->ts[7].tv_nsec >= 1000000000) {
+						gPTPd->ts[7].tv_nsec -= 1000000000;
+						gPTPd->ts[7].tv_sec++;						
+					}
+#ifndef GPTPD_BUILD_X_86
+					clock_settime(gPTPd->hwClkId, &gPTPd->ts[7]);
+#else
+					clock_settime(CLOCK_REALTIME, &gPTPd->ts[7]);
+#endif
 					break;
 				case GPTP_EVT_CS_SYNC_TO:
 					break;
