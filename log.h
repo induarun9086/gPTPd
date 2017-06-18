@@ -1,7 +1,7 @@
 #include "gptpcmn.h"
 
-#ifndef LOG_H
-#define LOG_H
+#ifndef GPTP_LOG_H
+#define GPTP_LOG_H
 
 #define GPTP_LOG_DEST_CONSOLE 0
 #define GPTP_LOG_DEST_SYSLOG  1

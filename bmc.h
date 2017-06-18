@@ -1,5 +1,8 @@
 #include "log.h"
 
+#ifndef GPTP_BMC_H
+#define GPTP_BMC_H
+
 #define BMC_STATE_INIT                    0
 #define BMC_STATE_GRAND_MASTER            1
 #define BMC_STATE_SLAVE                   2
@@ -12,4 +15,7 @@ void bmcHandleEvent(struct gPTPd* gPTPd, int evtId);
 static void bmcHandleStateChange(struct gPTPd* gPTPd, int toState);
 static void sendAnnounce(struct gPTPd* gPTPd);
 static bool updateAnnounceInfo(struct gPTPd* gPTPd);
+static void updatePrioVectors(struct gPTPd* gPTPd);
+#endif
+
 #endif

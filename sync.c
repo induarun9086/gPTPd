@@ -6,13 +6,25 @@
 void initCS(struct gPTPd* gPTPd)
 {
 	gPTPd->cs.state = CS_STATE_INIT;
-	gPTPd->cs.syncInterval = 2000;
-	gPTPd->cs.syncTimeout = 32000;
+	gPTPd->cs.syncInterval = GPTP_SYNC_INTERVAL;
+	gPTPd->cs.syncTimeout  = GPTP_SYNC_TIMEOUT;
 }
 
 void unintCS(struct gPTPd* gPTPd)
 {
 	
+}
+
+void csSetState(struct gPTPd* gPTPd, bool gmMaster)
+{
+	if((gmMaster == TRUE) && (gPTPd->cs.state != CS_STATE_GRAND_MASTER)) {
+		csHandleStateChange(gPTPd, CS_STATE_GRAND_MASTER);
+		gPTP_logMsg(GPTP_LOG_NOTICE, "--------------------------> Assuming grandmaster role\n");
+	} else if((gmMaster == FALSE) && (gPTPd->cs.state == CS_STATE_GRAND_MASTER)) {
+		csHandleStateChange(gPTPd, CS_STATE_SLAVE);
+		gPTP_logMsg(GPTP_LOG_NOTICE, "--------------------------> External grandmaster found\n");
+	} else
+		gPTP_logMsg(GPTP_LOG_WARNING, "gPTP cannot set state st: %d gmMaster: %d \n", gPTPd->cs.state, gmMaster);	
 }
 
 void csHandleEvent(struct gPTPd* gPTPd, int evtId)
@@ -26,7 +38,6 @@ void csHandleEvent(struct gPTPd* gPTPd, int evtId)
 				case GPTP_EVT_STATE_ENTRY:
 					break;
 				case GPTP_EVT_CS_ENABLE:
-					csHandleStateChange(gPTPd, CS_STATE_GRAND_MASTER);
 					break;
 				case GPTP_EVT_STATE_EXIT:
 					break;
@@ -44,6 +55,8 @@ void csHandleEvent(struct gPTPd* gPTPd, int evtId)
 					break;
 				case GPTP_EVT_CS_SYNC_RPT:
 					sendSync(gPTPd);
+					getTxTS(gPTPd, &gPTPd->ts[6]);
+					sendSyncFlwup(gPTPd);
 					break;
 				case GPTP_EVT_STATE_EXIT:
 					gptp_stopTimer(gPTPd, GPTP_TIMER_SYNC_RPT);
@@ -61,7 +74,6 @@ void csHandleEvent(struct gPTPd* gPTPd, int evtId)
 				case GPTP_EVT_CS_SYNC_MSG:
 					break;
 				case GPTP_EVT_CS_SYNC_TO:
-					csHandleStateChange(gPTPd, CS_STATE_GRAND_MASTER);
 					break;
 				case GPTP_EVT_STATE_EXIT:
 					gptp_stopTimer(gPTPd, GPTP_TIMER_SYNC_TO);
@@ -88,47 +100,29 @@ static void sendSync(struct gPTPd* gPTPd)
 	int err = 0;
 	int txLen = sizeof(struct ethhdr);
 	struct gPTPHdr *gh = (struct gPTPHdr *)&gPTPd->txBuf[sizeof(struct ethhdr)];
-	struct gPTPAnnoSt *annoSt = (struct gPTPAnnoSt*)&gPTPd->txBuf[GPTP_BODY_OFFSET];
-	struct gPTPtlv *tlv;
 
 	/* Fill gPTP header */
 	gh->h.f.seqNo = gptp_chgEndianess16(gPTPd->cs.syncSeqNo);
-	gh->h.f.b1.msgType = ((0x01 << 4) | GPTP_MSG_TYPE_ANNOUNCE);
-	gh->h.f.flags = gptp_chgEndianess16(0x0000);
+	gh->h.f.b1.msgType = (GPTP_TRANSPORT_L2 | GPTP_MSG_TYPE_SYNC);
+	gh->h.f.flags = gptp_chgEndianess16(GPTP_FLAGS_TWO_STEP);
 
-	gh->h.f.ctrl = 0x05;
-	gh->h.f.logMsgInt = 0x01;
+	gh->h.f.ctrl = GPTP_CONTROL_SYNC;
+	gh->h.f.logMsgInt = gptp_calcLogInterval(gPTPd->cs.syncInterval / 1000);
 
 	/* Add gPTP header size */
 	txLen += sizeof(struct gPTPHdr);
 
 	/* PTP body */
 	memset(&gPTPd->txBuf[GPTP_BODY_OFFSET], 0, (GPTP_TX_BUF_SIZE - GPTP_BODY_OFFSET));
-	annoSt->gmPrio1 = 250;
-	annoSt->gmClockQual.clockClass = 248;
-	annoSt->gmClockQual.clockAccuracy = 254;
-	annoSt->gmClockQual.offsetScaledLogVariance = gptp_chgEndianess16(0x4100);
-	annoSt->gmPrio2 = 250;
-	memcpy(&annoSt->gmIden[0], &gh->h.f.srcPortIden[0], GPTP_PORT_IDEN_LEN);
-	annoSt->stepsRem = 0;
-	annoSt->clockSrc = 0xA0; /* Internal oscillator */
-	txLen += sizeof(struct gPTPAnnoSt);
-
-	/* Path trace TLVs */
-	tlv = (struct gPTPtlv *)&gPTPd->txBuf[txLen];
-	tlv->type = gptp_chgEndianess16(0x0008);
-	tlv->len  = gptp_chgEndianess16(GPTP_CLOCK_IDEN_LEN);
-	txLen += sizeof(struct gPTPtlv);
-	memcpy(&gPTPd->txBuf[txLen], &gh->h.f.srcPortIden, GPTP_CLOCK_IDEN_LEN);
-	txLen += GPTP_CLOCK_IDEN_LEN;
+	txLen += GPTP_TS_LEN;
 
 	/* Insert length */
 	gh->h.f.msgLen = gptp_chgEndianess16(txLen - sizeof(struct ethhdr));
 
 	if ((err = sendto(gPTPd->sockfd, gPTPd->txBuf, txLen, 0, (struct sockaddr*)&gPTPd->txSockAddress, sizeof(struct sockaddr_ll))) < 0)
-		gPTP_logMsg(GPTP_LOG_DEBUG, "Announce Send failed %d %d\n", err, errno);	
+		gPTP_logMsg(GPTP_LOG_DEBUG, "Sync Send failed %d %d\n", err, errno);	
 	else
-		gPTP_logMsg(GPTP_LOG_INFO, ">>> Announce (%d) sent\n", gPTPd->cs.syncSeqNo++);
+		gPTP_logMsg(GPTP_LOG_NOTICE, ">>> Sync (%d) sent\n", gPTPd->cs.syncSeqNo);
 }
 
 static void sendSyncFlwup(struct gPTPd* gPTPd)
@@ -136,39 +130,34 @@ static void sendSyncFlwup(struct gPTPd* gPTPd)
 	int err = 0;
 	int txLen = sizeof(struct ethhdr);
 	struct gPTPHdr *gh = (struct gPTPHdr *)&gPTPd->txBuf[sizeof(struct ethhdr)];
-	struct gPTPAnnoSt *annoSt = (struct gPTPAnnoSt*)&gPTPd->txBuf[GPTP_BODY_OFFSET];
 	struct gPTPtlv *tlv;
+	struct gPTPOrgExt *orgExt;
 
 	/* Fill gPTP header */
 	gh->h.f.seqNo = gptp_chgEndianess16(gPTPd->cs.syncSeqNo);
-	gh->h.f.b1.msgType = ((0x01 << 4) | GPTP_MSG_TYPE_ANNOUNCE);
-	gh->h.f.flags = gptp_chgEndianess16(0x0000);
+	gh->h.f.b1.msgType = (GPTP_TRANSPORT_L2 | GPTP_MSG_TYPE_SYNC_FLWUP);
+	gh->h.f.flags = gptp_chgEndianess16(GPTP_FLAGS_NONE);
 
-	gh->h.f.ctrl = 0x05;
-	gh->h.f.logMsgInt = 0x01;
+	gh->h.f.ctrl = GPTP_CONTROL_SYNC_FLWUP;
+	gh->h.f.logMsgInt = gptp_calcLogInterval(gPTPd->cs.syncInterval / 1000);
 
 	/* Add gPTP header size */
 	txLen += sizeof(struct gPTPHdr);
 
 	/* PTP body */
 	memset(&gPTPd->txBuf[GPTP_BODY_OFFSET], 0, (GPTP_TX_BUF_SIZE - GPTP_BODY_OFFSET));
-	annoSt->gmPrio1 = 250;
-	annoSt->gmClockQual.clockClass = 248;
-	annoSt->gmClockQual.clockAccuracy = 254;
-	annoSt->gmClockQual.offsetScaledLogVariance = gptp_chgEndianess16(0x4100);
-	annoSt->gmPrio2 = 250;
-	memcpy(&annoSt->gmIden[0], &gh->h.f.srcPortIden[0], GPTP_PORT_IDEN_LEN);
-	annoSt->stepsRem = 0;
-	annoSt->clockSrc = 0xA0; /* Internal oscillator */
-	txLen += sizeof(struct gPTPAnnoSt);
+	gptp_copyTSToBuf(&gPTPd->ts[6], &gPTPd->txBuf[txLen]);
+	txLen += GPTP_TS_LEN;
 
-	/* Path trace TLVs */
+	/* Organization TLV */
 	tlv = (struct gPTPtlv *)&gPTPd->txBuf[txLen];
-	tlv->type = gptp_chgEndianess16(0x0008);
-	tlv->len  = gptp_chgEndianess16(GPTP_CLOCK_IDEN_LEN);
+	tlv->type = gptp_chgEndianess16(GPTP_TLV_TYPE_ORG_EXT);
+	tlv->len  = gptp_chgEndianess16(sizeof(struct gPTPOrgExt));
 	txLen += sizeof(struct gPTPtlv);
-	memcpy(&gPTPd->txBuf[txLen], &gh->h.f.srcPortIden, GPTP_CLOCK_IDEN_LEN);
-	txLen += GPTP_CLOCK_IDEN_LEN;
+	orgExt = (struct gPTPOrgExt *)&gPTPd->txBuf[txLen];
+	orgExt->orgType[0] = 0x00; orgExt->orgType[1] = 0x80; orgExt->orgType[2] = 0xC2;
+	orgExt->orgSubType[0] = 0x00; orgExt->orgSubType[1] = 0x00; orgExt->orgSubType[2] = 0x01;
+	txLen += sizeof(struct gPTPOrgExt);
 
 	/* Insert length */
 	gh->h.f.msgLen = gptp_chgEndianess16(txLen - sizeof(struct ethhdr));
@@ -176,7 +165,7 @@ static void sendSyncFlwup(struct gPTPd* gPTPd)
 	if ((err = sendto(gPTPd->sockfd, gPTPd->txBuf, txLen, 0, (struct sockaddr*)&gPTPd->txSockAddress, sizeof(struct sockaddr_ll))) < 0)
 		gPTP_logMsg(GPTP_LOG_DEBUG, "SyncFollowup Send failed %d %d\n", err, errno);	
 	else
-		gPTP_logMsg(GPTP_LOG_INFO, ">>> SyncFollowup (%d) sent\n", gPTPd->cs.syncSeqNo++);
+		gPTP_logMsg(GPTP_LOG_NOTICE, "=== SyncFollowup (%d) sent\n", gPTPd->cs.syncSeqNo++);
 }
 
 

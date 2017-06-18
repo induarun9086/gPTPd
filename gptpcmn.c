@@ -28,8 +28,8 @@ void gptp_initTxBuf(struct gPTPd* gPTPd)
 	eh->h_proto = htons(ETH_P_1588);
 
 	/* Fill common gPTP header fields */
-	gh->h.f.b1.tsSpec      = (0x01 << 4);
-	gh->h.f.b2.ptpVer      = 0x02;
+	gh->h.f.b1.tsSpec      = GPTP_TRANSPORT_L2;
+	gh->h.f.b2.ptpVer      = GPTP_VERSION_NO;
 	gh->h.f.srcPortIden[0] = ((u8 *)&gPTPd->if_mac.ifr_hwaddr.sa_data)[0];
 	gh->h.f.srcPortIden[1] = ((u8 *)&gPTPd->if_mac.ifr_hwaddr.sa_data)[1];
 	gh->h.f.srcPortIden[2] = ((u8 *)&gPTPd->if_mac.ifr_hwaddr.sa_data)[2];
@@ -71,6 +71,12 @@ void gptp_startTimer(struct gPTPd* gPTPd, u32 timerId, u32 timeInterval, u32 tim
 	gPTPd->timers[timerId].timeInterval = timeInterval;
 	gPTPd->timers[timerId].timerEvt = timerEvt;
 	gPTPd->timers[timerId].lastTS = gptp_getCurrMilliSecTS();
+}
+
+void gptp_resetTimer(struct gPTPd* gPTPd, u32 timerId)
+{
+	if(gPTPd->timers[timerId].timeInterval != 0)
+		gPTPd->timers[timerId].lastTS = gptp_getCurrMilliSecTS();
 }
 
 void gptp_stopTimer(struct gPTPd* gPTPd, u32 timerId)
@@ -149,4 +155,107 @@ u16 gptp_chgEndianess16(u16 val)
 {
 	return (((val & 0x00ff) << 8) | ((val & 0xff00) >> 8));
 }
+
+u8 gptp_calcLogInterval(u32 time)
+{
+	u8  logInt = 0;
+	u32 linInt = time;
+
+	while(linInt > 1) {
+		linInt = logInt >> 1;
+		logInt++;
+	}
+
+	return logInt;
+}
+
+
+void getTxTS(struct gPTPd* gPTPd, struct timespec* ts)
+{
+	static short sk_events = POLLPRI;
+	static short sk_revents = POLLPRI;
+	int cnt = 0, res = 0, level, type;
+	struct cmsghdr *cm;
+	struct timespec *sw, *rts = NULL;
+	struct pollfd pfd = { gPTPd->sockfd, sk_events, 0 };
+
+	do {
+		res = poll(&pfd, 1, 1000);
+		if (res < 1) {
+			gPTP_logMsg(GPTP_LOG_DEBUG, "Poll failed %d\n", res);
+			break;
+		} else if (!(pfd.revents & sk_revents)) {
+			gPTP_logMsg(GPTP_LOG_ERROR, "poll for tx timestamp woke up on non ERR event");
+			break;
+		} else {
+			gPTP_logMsg(GPTP_LOG_DEBUG, "Poll success\n");
+			gptp_initRxBuf(gPTPd);
+			cnt = recvmsg(gPTPd->sockfd, &gPTPd->rxMsgHdr, MSG_ERRQUEUE);
+			if (cnt < 1)
+				gPTP_logMsg(GPTP_LOG_ERROR, "Recv failed\n");
+			else
+				gPTP_logMsg(GPTP_LOG_DEBUG, "TxTs msg len: %d\n", cnt);
+				for (cm = CMSG_FIRSTHDR(&gPTPd->rxMsgHdr); cm != NULL; cm = CMSG_NXTHDR(&gPTPd->rxMsgHdr, cm)) {
+					level = cm->cmsg_level;
+					type  = cm->cmsg_type;
+					gPTP_logMsg(GPTP_LOG_DEBUG, "Lvl:%d Type: %d Size: %d (%d)\n", level, type, cm->cmsg_len, sizeof(struct timespec));
+					if (SOL_SOCKET == level && SO_TIMESTAMPING == type) {
+						if (cm->cmsg_len < sizeof(*ts) * 3) {
+							gPTP_logMsg(GPTP_LOG_DEBUG, "short SO_TIMESTAMPING message");
+						} else {
+							rts = (struct timespec *) CMSG_DATA(cm);
+							for(int i = 0; i < 3; i++)
+								if((rts[i].tv_sec != 0) || (rts[i].tv_nsec != 0)) {
+									if(ts != NULL) {
+                                                                                ts->tv_sec =  rts[i].tv_sec;
+										ts->tv_nsec = rts[i].tv_nsec;
+									}							
+									gPTP_logMsg(GPTP_LOG_INFO, "TxTS: %d: sec: %d nsec: %d \n", i, rts[i].tv_sec, rts[i].tv_nsec);
+								}
+						}
+					}
+					if (SOL_SOCKET == level && SO_TIMESTAMPNS == type) {
+						if (cm->cmsg_len < sizeof(*sw)) {
+							gPTP_logMsg(GPTP_LOG_DEBUG, "short SO_TIMESTAMPNS message");
+						}
+					}
+				}
+		}
+	} while(1);
+}
+
+
+void getRxTS(struct gPTPd* gPTPd, struct timespec* ts)
+{
+	int level, type;
+	struct cmsghdr *cm;
+	struct timespec *sw, *rts = NULL;
+
+	for (cm = CMSG_FIRSTHDR(&gPTPd->rxMsgHdr); cm != NULL; cm = CMSG_NXTHDR(&gPTPd->rxMsgHdr, cm)) {
+		level = cm->cmsg_level;
+		type  = cm->cmsg_type;
+		gPTP_logMsg(GPTP_LOG_DEBUG, "Lvl:%d Type: %d Size: %d (%d)\n", level, type, cm->cmsg_len, sizeof(struct timespec));
+		if (SOL_SOCKET == level && SO_TIMESTAMPING == type) {
+			if (cm->cmsg_len < sizeof(*ts) * 3) {
+				gPTP_logMsg(GPTP_LOG_DEBUG, "short SO_TIMESTAMPING message");
+			} else {
+				rts = (struct timespec *) CMSG_DATA(cm);
+				for(int i = 0; i < 3; i++)
+					if((rts[i].tv_sec != 0) || (rts[i].tv_nsec != 0)) {
+						if(ts != NULL) {
+							ts->tv_sec = rts[i].tv_sec;
+							ts->tv_nsec = rts[i].tv_nsec;
+						}
+						gPTP_logMsg(GPTP_LOG_INFO, "RxTS: %d: sec: %d nsec: %d \n", i, rts[i].tv_sec, rts[i].tv_nsec);
+					}
+			}
+		}
+		if (SOL_SOCKET == level && SO_TIMESTAMPNS == type) {
+			if (cm->cmsg_len < sizeof(*sw)) {
+				gPTP_logMsg(GPTP_LOG_DEBUG, "short SO_TIMESTAMPNS message");
+			}
+		}
+	}
+}
+
 

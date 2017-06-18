@@ -71,11 +71,7 @@
 #define GPTP_EVT_CS_SYNC_MSG              (GPTP_EVT_DEST_CS | 0x6)
 #define GPTP_EVT_CS_SYNC_FLWUP_MSG        (GPTP_EVT_DEST_CS | 0x7)
 
-/* GPTP types */
-#define GPTP_ETHEDR_HDR_LEN               14
-#define GPTP_HEADER_LEN                   34
-#define GPTP_BODY_OFFSET                  (GPTP_ETHEDR_HDR_LEN + GPTP_HEADER_LEN)
-
+/* GPTP message types */
 #define GPTP_MSG_TYPE_SYNC                0x00
 #define GPTP_MSG_TYPE_PDELAY_REQ          0x02
 #define GPTP_MSG_TYPE_PDELAY_RESP         0x03
@@ -84,10 +80,51 @@
 #define GPTP_MSG_TYPE_ANNOUNCE            0x0B
 #define GPTP_MSG_TYPE_SIGNAL              0x0C
 
+/* GPTP constants */
+#define GPTP_VERSION_NO                   0x02
+#define GPTP_TRANSPORT_L2                 0x10
+
+#define GPTP_CONTROL_SYNC                 0x00
+#define GPTP_CONTROL_SYNC_FLWUP           0x02
+#define GPTP_CONTROL_DELAY_ANNOUNCE       0x05
+
+#define GPTP_TLV_TYPE_ORG_EXT             0x0003
+#define GPTP_TLV_TYPE_PATH_TRACE          0x0008
+
+#define GPTP_LOG_MSG_INT_NOCHANGE         0x80
+#define GPTP_LOG_MSG_INT_INIT             0x7E
+#define GPTP_LOG_MSG_INT_MAX              0x7F
+
+/* GPTP Clock values */
+#define GPTP_DEFAULT_CLOCK_PRIO1          250
+#define GPTP_DEFAULT_CLOCK_CLASS          248
+#define GPTP_DEFAULT_CLOCK_ACCURACY       254
+#define GPTP_DEFAULT_OFFSET_VARIANCE      0x4100
+#define GPTP_DEFAULT_CLOCK_PRIO2          250
+#define GPTP_DEFAULT_STEPS_REMOVED        0
+
+/* Clock types */
+#define GPTP_CLOCK_TYPE_INT_OSC           0xA0
+
+/* GPTP flags */
+#define GPTP_FLAGS_NONE                   0x0000
+#define GPTP_FLAGS_TWO_STEP               0x0001
+
 /* GPTP sizes */
 #define GPTP_TS_LEN                       10
 #define GPTP_PORT_IDEN_LEN                10
 #define GPTP_CLOCK_IDEN_LEN               8
+#define GPTP_ETHEDR_HDR_LEN               14
+#define GPTP_HEADER_LEN                   34
+#define GPTP_BODY_OFFSET                  (GPTP_ETHEDR_HDR_LEN + GPTP_HEADER_LEN)
+
+/* Default timeouts */
+#define GPTP_PDELAY_REQ_INTERVAL          2000
+#define GPTP_PDELAY_REQ_TIMEOUT           8000
+#define GPTP_ANNOUNCE_INTERVAL            2000
+#define GPTP_ANNOUNCE_TIMEOUT             8000
+#define GPTP_SYNC_INTERVAL                2000
+#define GPTP_SYNC_TIMEOUT                 32000
 
 #define FALSE 0
 #define TRUE  1
@@ -134,25 +171,38 @@ struct gPTPTS {
 	u32 ns;
 };
 
-struct gPTPAnnoSt {
+struct gPTPPrioVec {
 	u8  res1[10];
 	u16 currUTCOff;
 	u8  res2;
-	u8  gmPrio1;
+	u8  prio1;
 	struct clockQual {
 		u8  clockClass;
 		u8  clockAccuracy;
 		u16 offsetScaledLogVariance;
-	}gmClockQual;
-	u8  gmPrio2;
-	u8  gmIden[GPTP_PORT_IDEN_LEN];
+	}clockQual;
+	u8  prio2;
+	u8  iden[GPTP_PORT_IDEN_LEN];
 	u16 stepsRem;
 	u8  clockSrc;
+};
+
+struct gPTPscaledNs {
+	u8 ns[12];
 };
 
 struct gPTPtlv {
 	u16 type;
 	u16 len;
+};
+
+struct gPTPOrgExt {
+	u8 orgType[3];
+	u8 orgSubType[3];
+	u32 csRateOff;
+	u16 gmTBInd;
+	struct gPTPscaledNs lastGMPhChg;
+	u32 gmFreqChg;
 };
 
 #pragma pack(pop)
@@ -177,6 +227,8 @@ struct bmcst {
 	u16 annoSeqNo;
 	u32 announceInterval;
 	u32 announceTimeout;
+	struct gPTPPrioVec portPrio;
+	struct gPTPPrioVec gmPrio;
 };
 
 struct csst {
@@ -208,7 +260,7 @@ struct gPTPd {
 	struct sockaddr_ll txSockAddress;
 	struct sockaddr_ll rxSockAddress;
 
-	struct timespec ts[6];
+	struct timespec ts[7];
 	struct timer timers[GPTP_NUM_TIMERS];
 	struct dmst dm;
 	struct bmcst bmc;
@@ -222,12 +274,18 @@ void gptp_initRxBuf(struct gPTPd* gPTPd);
 u64 gptp_getCurrMilliSecTS(void);
 void gptp_startTimer(struct gPTPd* gPTPd, u32 timerId, u32 timeInterval, u32 timerEvt);
 void gptp_stopTimer(struct gPTPd* gPTPd, u32 timerId);
+void gptp_resetTimer(struct gPTPd* gPTPd, u32 timerId);
+
 void gptp_timespec_diff(struct timespec *start, struct timespec *stop,
                    struct timespec *result);
 void gptp_copyTSFromBuf(struct timespec *ts, u8 *src);
 void gptp_copyTSToBuf(struct timespec *ts, u8 *dest);
 
 u16 gptp_chgEndianess16(u16 val);
+u8 gptp_calcLogInterval(u32 time);
+
+void getTxTS(struct gPTPd* gPTPd, struct timespec* ts);
+void getRxTS(struct gPTPd* gPTPd, struct timespec* ts);
 
 #endif
 
