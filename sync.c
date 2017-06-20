@@ -29,6 +29,8 @@ void csSetState(struct gPTPd* gPTPd, bool gmMaster)
 
 void csHandleEvent(struct gPTPd* gPTPd, int evtId)
 {
+	struct timespec sync[3];
+
 	gPTP_logMsg(GPTP_LOG_INFO, "gPTP csHandleEvent st: %d evt: 0x%x \n", gPTPd->cs.state, evtId);
 	
 	switch(gPTPd->cs.state) {
@@ -70,20 +72,35 @@ void csHandleEvent(struct gPTPd* gPTPd, int evtId)
 					gptp_startTimer(gPTPd, GPTP_TIMER_SYNC_TO, gPTPd->cs.syncTimeout, GPTP_EVT_CS_SYNC_TO);
 					break;
 				case GPTP_EVT_CS_SYNC_MSG:
+					getRxTS(gPTPd, &gPTPd->ts[7]);
 					break;
 				case GPTP_EVT_CS_SYNC_FLWUP_MSG:
-					gptp_copyTSFromBuf(&gPTPd->ts[7], &gPTPd->rxBuf[GPTP_BODY_OFFSET]);
-					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ SyncTime: %llu_%lu %lu\n", (u64)gPTPd->ts[7].tv_sec, gPTPd->ts[7].tv_nsec, gPTPd->msrdDelay);
-					gPTPd->ts[7].tv_nsec += gPTPd->msrdDelay;
-					while(gPTPd->ts[7].tv_nsec >= 1000000000) {
-						gPTPd->ts[7].tv_nsec -= 1000000000;
-						gPTPd->ts[7].tv_sec++;						
+					gptp_copyTSFromBuf(&gPTPd->ts[8], &gPTPd->rxBuf[GPTP_BODY_OFFSET]);
+					gPTPd->ts[10].tv_sec = 0;
+					gPTPd->ts[10].tv_nsec = gPTPd->msrdDelay;
+
+					gptp_timespec_sum(&gPTPd->ts[8],&gPTPd->ts[10],&sync[0]);
+
+					if(clock_gettime(gPTPd->hwClkId, &gPTPd->ts[9]) < 0) {
+						gPTP_logMsg(GPTP_LOG_ERROR, "clock_getTime failure, clk_id:%d, err:%d\n", gPTPd->hwClkId, errno);					
 					}
+
+					gptp_timespec_diff(&gPTPd->ts[7],&gPTPd->ts[9],&sync[1]);
+					gptp_timespec_sum(&sync[0],&sync[1],&sync[2]);
+
 #ifndef GPTPD_BUILD_X_86
-					clock_settime(gPTPd->hwClkId, &gPTPd->ts[7]);
+					if(clock_settime(gPTPd->hwClkId, &sync[2]) < 0) {
+						gPTP_logMsg(GPTP_LOG_ERROR, "clock_setTime failure, clk_id:%d, err:%d\n", gPTPd->hwClkId, errno);					
+					}
 #else
-					clock_settime(CLOCK_REALTIME, &gPTPd->ts[7]);
+					clock_settime(CLOCK_REALTIME, &sync[2]);
 #endif
+
+					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ SyncTxTime: %llu_%lu\n", (u64)gPTPd->ts[8].tv_sec, gPTPd->ts[8].tv_nsec);
+					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ SyncRxTime: %llu_%lu\n", (u64)gPTPd->ts[7].tv_sec, gPTPd->ts[7].tv_nsec);
+					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ CurrUsTime: %llu_%lu\n", (u64)gPTPd->ts[9].tv_sec, gPTPd->ts[9].tv_nsec);
+					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ lDelayTime: %llu_%lu\n", (u64)gPTPd->ts[10].tv_sec, gPTPd->ts[10].tv_nsec);
+					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ CurrSyTime: %llu_%lu\n", (u64)sync[2].tv_sec, sync[2].tv_nsec);
 					break;
 				case GPTP_EVT_CS_SYNC_TO:
 					break;

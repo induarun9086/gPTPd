@@ -107,9 +107,17 @@ void dmHandleEvent(struct gPTPd* gPTPd, int evtId)
 						gPTP_logMsg(GPTP_LOG_INFO, "@@@ t%d: %llu_%lu\n", (i+1), (u64)gPTPd->ts[i].tv_sec, gPTPd->ts[i].tv_nsec);
 					gptp_timespec_diff(&gPTPd->ts[0],&gPTPd->ts[3],&diff[0]);
 					gptp_timespec_diff(&gPTPd->ts[1],&gPTPd->ts[2],&diff[1]);
-					gptp_timespec_diff(&diff[1],&diff[0],&diff[2]);
-					gPTPd->msrdDelay = diff[2].tv_nsec/ 2;
-					gPTP_logMsg(GPTP_LOG_NOTICE, "--------------------------> gPTP msrdDelay: %d\n", gPTPd->msrdDelay);
+					if(diff[1].tv_nsec > diff[0].tv_nsec) {
+						gPTP_logMsg(GPTP_LOG_INFO, "Negative delay ignored 0:%lu 1:%lu\n", diff[0].tv_nsec, diff[1].tv_nsec);
+					} else {
+						gptp_timespec_diff(&diff[1],&diff[0],&diff[2]);
+						if(diff[2].tv_nsec > 50000) {
+							gPTP_logMsg(GPTP_LOG_INFO, "Abnormally large delay ignored %lu\n", (diff[2].tv_nsec / 2));
+						} else {
+							gPTPd->msrdDelay = diff[2].tv_nsec/ 2;
+							gPTP_logMsg(GPTP_LOG_NOTICE, "--------------------------> gPTP msrdDelay: %lu\n", gPTPd->msrdDelay);
+						}
+					}
 					dmHandleStateChange(gPTPd, DM_STATE_IDLE);
 					break;
 				case GPTP_EVT_STATE_EXIT:

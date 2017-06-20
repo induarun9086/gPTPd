@@ -261,7 +261,7 @@ struct gPTPd {
 	struct sockaddr_ll txSockAddress;
 	struct sockaddr_ll rxSockAddress;
 
-	struct timespec ts[8];
+	struct timespec ts[11];
 	struct timer timers[GPTP_NUM_TIMERS];
 	struct dmst dm;
 	struct bmcst bmc;
@@ -277,8 +277,9 @@ void gptp_startTimer(struct gPTPd* gPTPd, u32 timerId, u32 timeInterval, u32 tim
 void gptp_stopTimer(struct gPTPd* gPTPd, u32 timerId);
 void gptp_resetTimer(struct gPTPd* gPTPd, u32 timerId);
 
-void gptp_timespec_diff(struct timespec *start, struct timespec *stop,
-                   struct timespec *result);
+void gptp_timespec_diff(struct timespec *start, struct timespec *stop, struct timespec *result);
+void gptp_timespec_sum(struct timespec *start, struct timespec *stop, struct timespec *result);
+
 void gptp_copyTSFromBuf(struct timespec *ts, u8 *src);
 void gptp_copyTSToBuf(struct timespec *ts, u8 *dest);
 

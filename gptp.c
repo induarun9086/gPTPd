@@ -127,6 +127,7 @@ static void gptp_start(void)
 	int tsOpts = 0;
 	struct hwtstamp_config hwcfg;
 	struct timeval rxTimeout;
+	int fd;
 
 	/* Open RAW socket to send on */
 	if ((gPTPd.sockfd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_1588))) == -1) {
@@ -249,7 +250,8 @@ static void gptp_start(void)
 
 #ifndef GPTPD_BUILD_X_86
 	/* Open the hardware clock */
-	gPTPd.hwClkId = open("/dev/ptp0", O_RDWR);
+	fd = open("/dev/ptp0", O_RDWR);
+	gPTPd.hwClkId = ((~(clockid_t) (fd) << 3) | 3);
 #endif
 }
 

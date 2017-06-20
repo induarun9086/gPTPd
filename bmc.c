@@ -184,8 +184,10 @@ static bool updateAnnounceInfo(struct gPTPd* gPTPd)
 		for(int i = 0; ((i < GPTP_PORT_IDEN_LEN) && (gmFound == FALSE)); i++) {
 			if(gnPrio->iden[i] < gPTPd->bmc.portPrio.iden[i])
 				gmFound = TRUE;
+			else if(gnPrio->iden[i] > gPTPd->bmc.portPrio.iden[i])
+				break;
 			else
-				break;		
+				continue;	
 		}	
 	}
 
