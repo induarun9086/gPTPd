@@ -5,6 +5,8 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <sys/timex.h>
+#include <sys/syscall.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <net/if.h>
@@ -119,8 +121,8 @@
 #define GPTP_BODY_OFFSET                  (GPTP_ETHEDR_HDR_LEN + GPTP_HEADER_LEN)
 
 /* Default timeouts */
-#define GPTP_PDELAY_REQ_INTERVAL          2000
-#define GPTP_PDELAY_REQ_TIMEOUT           8000
+#define GPTP_PDELAY_REQ_INTERVAL          8000
+#define GPTP_PDELAY_REQ_TIMEOUT           16000
 #define GPTP_ANNOUNCE_INTERVAL            2000
 #define GPTP_ANNOUNCE_TIMEOUT             8000
 #define GPTP_SYNC_INTERVAL                2000
@@ -129,6 +131,10 @@
 #define FALSE 0
 #define TRUE  1
 
+typedef signed long long int s64;
+typedef signed int s32;
+typedef signed short int s16;
+typedef signed char s8;
 typedef unsigned long long int u64;
 typedef unsigned int u32;
 typedef unsigned short int u16;
@@ -261,7 +267,8 @@ struct gPTPd {
 	struct sockaddr_ll txSockAddress;
 	struct sockaddr_ll rxSockAddress;
 
-	struct timespec ts[11];
+	struct timex tx;
+	struct timespec ts[12];
 	struct timer timers[GPTP_NUM_TIMERS];
 	struct dmst dm;
 	struct bmcst bmc;
@@ -277,6 +284,7 @@ void gptp_startTimer(struct gPTPd* gPTPd, u32 timerId, u32 timeInterval, u32 tim
 void gptp_stopTimer(struct gPTPd* gPTPd, u32 timerId);
 void gptp_resetTimer(struct gPTPd* gPTPd, u32 timerId);
 
+int gptp_timespec_absdiff(struct timespec *start, struct timespec *stop, struct timespec *result);
 void gptp_timespec_diff(struct timespec *start, struct timespec *stop, struct timespec *result);
 void gptp_timespec_sum(struct timespec *start, struct timespec *stop, struct timespec *result);
 

@@ -104,7 +104,7 @@ void dmHandleEvent(struct gPTPd* gPTPd, int evtId)
 				case GPTP_EVT_DM_PDELAY_RESP_FLWUP:
 					gptp_copyTSFromBuf(&gPTPd->ts[2], &gPTPd->rxBuf[GPTP_BODY_OFFSET]);
 					for(int i = 0; i < 4; i++)
-						gPTP_logMsg(GPTP_LOG_INFO, "@@@ t%d: %llu_%lu\n", (i+1), (u64)gPTPd->ts[i].tv_sec, gPTPd->ts[i].tv_nsec);
+						gPTP_logMsg(GPTP_LOG_INFO, "@@@ t%d: %lld_%ld\n", (i+1), (s64)gPTPd->ts[i].tv_sec, gPTPd->ts[i].tv_nsec);
 					gptp_timespec_diff(&gPTPd->ts[0],&gPTPd->ts[3],&diff[0]);
 					gptp_timespec_diff(&gPTPd->ts[1],&gPTPd->ts[2],&diff[1]);
 					if(diff[1].tv_nsec > diff[0].tv_nsec) {

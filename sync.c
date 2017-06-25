@@ -29,7 +29,8 @@ void csSetState(struct gPTPd* gPTPd, bool gmMaster)
 
 void csHandleEvent(struct gPTPd* gPTPd, int evtId)
 {
-	struct timespec sync[3];
+	int diffsign = 1;
+	struct timespec sync[4];
 
 	gPTP_logMsg(GPTP_LOG_INFO, "gPTP csHandleEvent st: %d evt: 0x%x \n", gPTPd->cs.state, evtId);
 	
@@ -76,31 +77,47 @@ void csHandleEvent(struct gPTPd* gPTPd, int evtId)
 					break;
 				case GPTP_EVT_CS_SYNC_FLWUP_MSG:
 					gptp_copyTSFromBuf(&gPTPd->ts[8], &gPTPd->rxBuf[GPTP_BODY_OFFSET]);
-					gPTPd->ts[10].tv_sec = 0;
-					gPTPd->ts[10].tv_nsec = gPTPd->msrdDelay;
+					gPTPd->ts[9].tv_sec = 0;
+					gPTPd->ts[9].tv_nsec = gPTPd->msrdDelay;
 
-					gptp_timespec_sum(&gPTPd->ts[8],&gPTPd->ts[10],&sync[0]);
+					gptp_timespec_sum(&gPTPd->ts[8],&gPTPd->ts[9],&sync[0]);
+					diffsign = gptp_timespec_absdiff(&gPTPd->ts[7],&sync[0],&sync[1]);
 
-					if(clock_gettime(gPTPd->hwClkId, &gPTPd->ts[9]) < 0) {
-						gPTP_logMsg(GPTP_LOG_ERROR, "clock_getTime failure, clk_id:%d, err:%d\n", gPTPd->hwClkId, errno);					
-					}
+					if(clock_gettime(gPTPd->hwClkId, &gPTPd->ts[10]) < 0)
+						gPTP_logMsg(GPTP_LOG_ERROR, "clock_getTime failure, clk_id:%d, err:%d\n", gPTPd->hwClkId, errno);
 
-					gptp_timespec_diff(&gPTPd->ts[7],&gPTPd->ts[9],&sync[1]);
-					gptp_timespec_sum(&sync[0],&sync[1],&sync[2]);
+					gptp_timespec_diff(&gPTPd->ts[7],&gPTPd->ts[10],&sync[2]);
+					gptp_timespec_sum(&sync[2],&sync[0],&sync[3]);
 
-#ifndef GPTPD_BUILD_X_86
-					if(clock_settime(gPTPd->hwClkId, &sync[2]) < 0) {
-						gPTP_logMsg(GPTP_LOG_ERROR, "clock_setTime failure, clk_id:%d, err:%d\n", gPTPd->hwClkId, errno);					
-					}
+					if((sync[1].tv_sec > 10) || (diffsign == -1)) {
+#ifdef GPTPD_BUILD_X_86
+						if(clock_settime(CLOCK_REALTIME, &sync[3]) < 0)
 #else
-					clock_settime(CLOCK_REALTIME, &sync[2]);
+						if(clock_settime(gPTPd->hwClkId, &sync[3]) < 0)
 #endif
+							gPTP_logMsg(GPTP_LOG_ERROR, "clock_setTime failure, clk_id:%d, err:%d\n", gPTPd->hwClkId, errno);
+					} else {
+						gPTPd->tx.time.tv_sec  = sync[1].tv_sec;
+						gPTPd->tx.time.tv_usec = sync[1].tv_nsec;
+						gPTPd->tx.modes   = (ADJ_SETOFFSET | ADJ_NANO);
 
-					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ SyncTxTime: %llu_%lu\n", (u64)gPTPd->ts[8].tv_sec, gPTPd->ts[8].tv_nsec);
-					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ SyncRxTime: %llu_%lu\n", (u64)gPTPd->ts[7].tv_sec, gPTPd->ts[7].tv_nsec);
-					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ CurrUsTime: %llu_%lu\n", (u64)gPTPd->ts[9].tv_sec, gPTPd->ts[9].tv_nsec);
-					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ lDelayTime: %llu_%lu\n", (u64)gPTPd->ts[10].tv_sec, gPTPd->ts[10].tv_nsec);
-					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ CurrSyTime: %llu_%lu\n", (u64)sync[2].tv_sec, sync[2].tv_nsec);
+#ifdef GPTPD_BUILD_X_86
+						if(clock_adjtime(CLOCK_REALTIME, &gPTPd->tx) < 0)
+#else
+						if(syscall(__NR_clock_adjtime, gPTPd->hwClkId, &gPTPd->tx) < 0)
+#endif
+							gPTP_logMsg(GPTP_LOG_ERROR, "clock_adjTime failure, clk_id:%d, err:%d\n", gPTPd->hwClkId, errno);
+					}
+
+					if(clock_gettime(gPTPd->hwClkId, &gPTPd->ts[11]) < 0)
+						gPTP_logMsg(GPTP_LOG_ERROR, "clock_getTime failure, clk_id:%d, err:%d\n", gPTPd->hwClkId, errno);					
+
+					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ SyncTxTime: %lld_%09ld\n", (s64)gPTPd->ts[8].tv_sec, gPTPd->ts[8].tv_nsec);
+					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ SyncRxTime: %lld_%09ld\n", (s64)gPTPd->ts[7].tv_sec, gPTPd->ts[7].tv_nsec);
+					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ lDelayTime: %lld_%09ld\n", (s64)gPTPd->ts[9].tv_sec, gPTPd->ts[9].tv_nsec);
+					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ CurrSynOff: %lld_%09ld (%d)\n", (s64)sync[1].tv_sec, sync[1].tv_nsec, diffsign);
+					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ prSyncTime: %lld_%09ld\n", (s64)gPTPd->ts[10].tv_sec, gPTPd->ts[10].tv_nsec);
+					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ poSyncTime: %lld_%09ld\n", (s64)gPTPd->ts[11].tv_sec, gPTPd->ts[11].tv_nsec);
 					break;
 				case GPTP_EVT_CS_SYNC_TO:
 					break;

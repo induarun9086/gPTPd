@@ -86,6 +86,26 @@ void gptp_stopTimer(struct gPTPd* gPTPd, u32 timerId)
 	gPTPd->timers[timerId].lastTS = 0;
 }
 
+
+int gptp_timespec_absdiff(struct timespec *start, struct timespec *stop, struct timespec *result)
+{
+	int diffsign = 1;
+
+	if (stop->tv_sec > start->tv_sec) {
+		gptp_timespec_diff(start, stop, result);
+	} else if(stop->tv_sec < start->tv_sec) {
+		gptp_timespec_diff(stop, start, result);
+		diffsign = -1;
+	} else if(stop->tv_nsec > start->tv_nsec) {
+		gptp_timespec_diff(start, stop, result);
+	} else {
+		gptp_timespec_diff(stop, start, result);
+		diffsign = -1;
+	}
+    
+    return diffsign;
+}
+
 void gptp_timespec_diff(struct timespec *start, struct timespec *stop, struct timespec *result)
 {
     if ((stop->tv_nsec - start->tv_nsec) < 0) {
