@@ -137,7 +137,7 @@ static void sendAnnounce(struct gPTPd* gPTPd)
 	if ((err = sendto(gPTPd->sockfd, gPTPd->txBuf, txLen, 0, (struct sockaddr*)&gPTPd->txSockAddress, sizeof(struct sockaddr_ll))) < 0)
 		gPTP_logMsg(GPTP_LOG_DEBUG, "Announce Send failed %d %d\n", err, errno);	
 	else
-		gPTP_logMsg(GPTP_LOG_NOTICE, ">>> Announce (%d) sent\n", gPTPd->bmc.annoSeqNo++);
+		gPTP_logMsg(GPTP_LOG_INFO, ">>> Announce (%d) sent\n", gPTPd->bmc.annoSeqNo++);
 }
 
 static bool updateAnnounceInfo(struct gPTPd* gPTPd)

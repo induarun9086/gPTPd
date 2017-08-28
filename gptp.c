@@ -267,27 +267,27 @@ static int gptp_parseMsg(void)
 			case GPTP_MSG_TYPE_PDELAY_REQ:
 				gPTPd.dm.rxSeqNo = gptp_chgEndianess16(gh->h.f.seqNo);
 				memcpy(&gPTPd.dm.reqPortIden[0], &gh->h.f.srcPortIden[0], GPTP_PORT_IDEN_LEN);
-				gPTP_logMsg(GPTP_LOG_NOTICE, "gPTP PDelayReq (%d) Rcvd \n", gPTPd.dm.rxSeqNo);
+				gPTP_logMsg(GPTP_LOG_INFO, "gPTP PDelayReq (%d) Rcvd \n", gPTPd.dm.rxSeqNo);
 				evt = GPTP_EVT_DM_PDELAY_REQ;
 				break;
 			case GPTP_MSG_TYPE_PDELAY_RESP:
-				gPTP_logMsg(GPTP_LOG_NOTICE, "gPTP PDelayResp (%d) Rcvd \n", gptp_chgEndianess16(gh->h.f.seqNo));
+				gPTP_logMsg(GPTP_LOG_INFO, "gPTP PDelayResp (%d) Rcvd \n", gptp_chgEndianess16(gh->h.f.seqNo));
 				evt = GPTP_EVT_DM_PDELAY_RESP;
 				break;
 			case GPTP_MSG_TYPE_PDELAY_RESP_FLWUP:
-				gPTP_logMsg(GPTP_LOG_NOTICE, "gPTP PDelayRespFlwUp (%d) Rcvd \n", gptp_chgEndianess16(gh->h.f.seqNo));
+				gPTP_logMsg(GPTP_LOG_INFO, "gPTP PDelayRespFlwUp (%d) Rcvd \n", gptp_chgEndianess16(gh->h.f.seqNo));
 				evt = GPTP_EVT_DM_PDELAY_RESP_FLWUP;
 				break;
 			case GPTP_MSG_TYPE_ANNOUNCE:
-				gPTP_logMsg(GPTP_LOG_NOTICE, "gPTP Announce (%d) Rcvd \n", gptp_chgEndianess16(gh->h.f.seqNo));
+				gPTP_logMsg(GPTP_LOG_INFO, "gPTP Announce (%d) Rcvd \n", gptp_chgEndianess16(gh->h.f.seqNo));
 				evt = GPTP_EVT_BMC_ANNOUNCE_MSG;
 				break;
 			case GPTP_MSG_TYPE_SYNC:
-				gPTP_logMsg(GPTP_LOG_NOTICE, "gPTP Sync (%d) Rcvd \n", gptp_chgEndianess16(gh->h.f.seqNo));
+				gPTP_logMsg(GPTP_LOG_INFO, "gPTP Sync (%d) Rcvd \n", gptp_chgEndianess16(gh->h.f.seqNo));
 				evt = GPTP_EVT_CS_SYNC_MSG;
 				break;
 			case GPTP_MSG_TYPE_SYNC_FLWUP:
-				gPTP_logMsg(GPTP_LOG_NOTICE, "gPTP SyncFlwUp (%d) Rcvd \n", gptp_chgEndianess16(gh->h.f.seqNo));
+				gPTP_logMsg(GPTP_LOG_INFO, "gPTP SyncFlwUp (%d) Rcvd \n", gptp_chgEndianess16(gh->h.f.seqNo));
 				evt = GPTP_EVT_CS_SYNC_FLWUP_MSG;
 				break;
 			default:

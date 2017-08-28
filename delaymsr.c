@@ -115,7 +115,7 @@ void dmHandleEvent(struct gPTPd* gPTPd, int evtId)
 							gPTP_logMsg(GPTP_LOG_INFO, "Abnormally large delay ignored %lu\n", (diff[2].tv_nsec / 2));
 						} else {
 							gPTPd->msrdDelay = diff[2].tv_nsec/ 2;
-							gPTP_logMsg(GPTP_LOG_NOTICE, "--------------------------> gPTP msrdDelay: %lu\n", gPTPd->msrdDelay);
+							gPTP_logMsg(GPTP_LOG_NOTICE, "---> gPTP msrdDelay: %lu\n", gPTPd->msrdDelay);
 						}
 					}
 					dmHandleStateChange(gPTPd, DM_STATE_IDLE);
@@ -166,7 +166,7 @@ static void sendDelayReq(struct gPTPd* gPTPd)
 	if ((err = sendto(gPTPd->sockfd, gPTPd->txBuf, txLen, 0, (struct sockaddr*)&gPTPd->txSockAddress, sizeof(struct sockaddr_ll))) < 0)
 		gPTP_logMsg(GPTP_LOG_DEBUG, "PDelayReq Send failed %d %d\n", err, errno);	
 	else
-		gPTP_logMsg(GPTP_LOG_NOTICE, ">>> PDelayReq (%d) sent\n", gPTPd->dm.txSeqNo++);
+		gPTP_logMsg(GPTP_LOG_INFO, ">>> PDelayReq (%d) sent\n", gPTPd->dm.txSeqNo++);
 }
 
 static void sendDelayResp(struct gPTPd* gPTPd)
@@ -199,7 +199,7 @@ static void sendDelayResp(struct gPTPd* gPTPd)
 	if ((err = sendto(gPTPd->sockfd, gPTPd->txBuf, txLen, 0, (struct sockaddr*)&gPTPd->txSockAddress, sizeof(struct sockaddr_ll))) < 0)
 		gPTP_logMsg(GPTP_LOG_DEBUG, "PDelayResp Send failed %d %d\n", err, errno);	
 	else
-		gPTP_logMsg(GPTP_LOG_NOTICE, "=== PDelayResp (%d) sent\n", gPTPd->dm.rxSeqNo);
+		gPTP_logMsg(GPTP_LOG_INFO, "=== PDelayResp (%d) sent\n", gPTPd->dm.rxSeqNo);
 }
 
 static void sendDelayRespFlwUp(struct gPTPd* gPTPd)
@@ -232,7 +232,7 @@ static void sendDelayRespFlwUp(struct gPTPd* gPTPd)
 	if ((err = sendto(gPTPd->sockfd, gPTPd->txBuf, txLen, 0, (struct sockaddr*)&gPTPd->txSockAddress, sizeof(struct sockaddr_ll))) < 0)
 		gPTP_logMsg(GPTP_LOG_DEBUG, "PDelayRespFlwUp Send failed %d %d\n", err, errno);	
 	else
-		gPTP_logMsg(GPTP_LOG_NOTICE, "=== PDelayRespFlwUp (%d) sent\n", gPTPd->dm.rxSeqNo);
+		gPTP_logMsg(GPTP_LOG_INFO, "=== PDelayRespFlwUp (%d) sent\n", gPTPd->dm.rxSeqNo);
 }
 
 

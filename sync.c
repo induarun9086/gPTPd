@@ -19,10 +19,10 @@ void csSetState(struct gPTPd* gPTPd, bool gmMaster)
 {
 	if((gmMaster == TRUE) && (gPTPd->cs.state != CS_STATE_GRAND_MASTER)) {
 		csHandleStateChange(gPTPd, CS_STATE_GRAND_MASTER);
-		gPTP_logMsg(GPTP_LOG_NOTICE, "--------------------------> Assuming grandmaster role\n");
+		gPTP_logMsg(GPTP_LOG_NOTICE, "---> Assuming grandmaster role\n");
 	} else if((gmMaster == FALSE) && (gPTPd->cs.state == CS_STATE_GRAND_MASTER)) {
 		csHandleStateChange(gPTPd, CS_STATE_SLAVE);
-		gPTP_logMsg(GPTP_LOG_NOTICE, "--------------------------> External grandmaster found\n");
+		gPTP_logMsg(GPTP_LOG_NOTICE, "---> External grandmaster found\n");
 	} else
 		gPTP_logMsg(GPTP_LOG_WARNING, "gPTP cannot set state st: %d gmMaster: %d \n", gPTPd->cs.state, gmMaster);	
 }
@@ -99,9 +99,9 @@ void csHandleEvent(struct gPTPd* gPTPd, int evtId)
 					} else {
 						gPTPd->tx.time.tv_sec  = sync[1].tv_sec;
 						gPTPd->tx.time.tv_usec = sync[1].tv_nsec;
-						gPTPd->tx.modes   = (ADJ_SETOFFSET | ADJ_NANO);
 
 #ifdef GPTPD_BUILD_X_86
+						gPTPd->tx.modes   = (ADJ_SETOFFSET | ADJ_NANO);
 						if(clock_adjtime(CLOCK_REALTIME, &gPTPd->tx) < 0)
 #else
 						if(syscall(__NR_clock_adjtime, gPTPd->hwClkId, &gPTPd->tx) < 0)
@@ -112,11 +112,11 @@ void csHandleEvent(struct gPTPd* gPTPd, int evtId)
 					if(clock_gettime(gPTPd->hwClkId, &gPTPd->ts[11]) < 0)
 						gPTP_logMsg(GPTP_LOG_ERROR, "clock_getTime failure, clk_id:%d, err:%d\n", gPTPd->hwClkId, errno);					
 
-					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ SyncTxTime: %lld_%09ld\n", (s64)gPTPd->ts[8].tv_sec, gPTPd->ts[8].tv_nsec);
-					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ SyncRxTime: %lld_%09ld\n", (s64)gPTPd->ts[7].tv_sec, gPTPd->ts[7].tv_nsec);
-					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ lDelayTime: %lld_%09ld\n", (s64)gPTPd->ts[9].tv_sec, gPTPd->ts[9].tv_nsec);
-					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ CurrSynOff: %lld_%09ld (%d)\n", (s64)sync[1].tv_sec, sync[1].tv_nsec, diffsign);
-					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ prSyncTime: %lld_%09ld\n", (s64)gPTPd->ts[10].tv_sec, gPTPd->ts[10].tv_nsec);
+					gPTP_logMsg(GPTP_LOG_INFO, "@@@ SyncTxTime: %lld_%09ld\n", (s64)gPTPd->ts[8].tv_sec, gPTPd->ts[8].tv_nsec);
+					gPTP_logMsg(GPTP_LOG_INFO, "@@@ SyncRxTime: %lld_%09ld\n", (s64)gPTPd->ts[7].tv_sec, gPTPd->ts[7].tv_nsec);
+					gPTP_logMsg(GPTP_LOG_INFO, "@@@ lDelayTime: %lld_%09ld\n", (s64)gPTPd->ts[9].tv_sec, gPTPd->ts[9].tv_nsec);
+					gPTP_logMsg(GPTP_LOG_INFO, "@@@ CurrSynOff: %lld_%09ld (%d)\n", (s64)sync[1].tv_sec, sync[1].tv_nsec, diffsign);
+					gPTP_logMsg(GPTP_LOG_INFO, "@@@ prSyncTime: %lld_%09ld\n", (s64)gPTPd->ts[10].tv_sec, gPTPd->ts[10].tv_nsec);
 					gPTP_logMsg(GPTP_LOG_NOTICE, "@@@ poSyncTime: %lld_%09ld\n", (s64)gPTPd->ts[11].tv_sec, gPTPd->ts[11].tv_nsec);
 					break;
 				case GPTP_EVT_CS_SYNC_TO:
@@ -168,7 +168,7 @@ static void sendSync(struct gPTPd* gPTPd)
 	if ((err = sendto(gPTPd->sockfd, gPTPd->txBuf, txLen, 0, (struct sockaddr*)&gPTPd->txSockAddress, sizeof(struct sockaddr_ll))) < 0)
 		gPTP_logMsg(GPTP_LOG_DEBUG, "Sync Send failed %d %d\n", err, errno);	
 	else
-		gPTP_logMsg(GPTP_LOG_NOTICE, ">>> Sync (%d) sent\n", gPTPd->cs.syncSeqNo);
+		gPTP_logMsg(GPTP_LOG_INFO, ">>> Sync (%d) sent\n", gPTPd->cs.syncSeqNo);
 }
 
 static void sendSyncFlwup(struct gPTPd* gPTPd)
@@ -211,7 +211,7 @@ static void sendSyncFlwup(struct gPTPd* gPTPd)
 	if ((err = sendto(gPTPd->sockfd, gPTPd->txBuf, txLen, 0, (struct sockaddr*)&gPTPd->txSockAddress, sizeof(struct sockaddr_ll))) < 0)
 		gPTP_logMsg(GPTP_LOG_DEBUG, "SyncFollowup Send failed %d %d\n", err, errno);	
 	else
-		gPTP_logMsg(GPTP_LOG_NOTICE, "=== SyncFollowup (%d) sent\n", gPTPd->cs.syncSeqNo++);
+		gPTP_logMsg(GPTP_LOG_INFO, "=== SyncFollowup (%d) sent\n", gPTPd->cs.syncSeqNo++);
 }
 
 
