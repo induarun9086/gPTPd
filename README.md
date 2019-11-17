@@ -25,3 +25,8 @@ IEEE 802.1 AS (gPTP) daemon
    * Best Master Clock algorithm to select the best master in the network
    * Master and slave mode operation for time synchronization
    * Time synchronizartion using the PTP hardware clock
+
+**License**
+
+MIT License Copyright (c) [2018] [Indumathi Duraipandian]
+
